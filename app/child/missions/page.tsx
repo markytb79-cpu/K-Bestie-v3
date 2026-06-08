@@ -30,7 +30,7 @@ export default function ChildMissionsPage() {
 
   return (
     <div
-      className="min-h-dvh pb-[72px] md:max-w-[420px] md:mx-auto"
+      className="min-h-dvh pb-[72px] max-w-[480px] mx-auto shadow-sm"
       style={{ background: "var(--color-child-bg)", fontFamily: "var(--font-child)" }}
     >
       {/* 헤더 */}

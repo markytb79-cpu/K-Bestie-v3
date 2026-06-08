@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { DEMO_CHILD, DEMO_PARENT_QUESTIONS } from "@/lib/demo-data";
 
 interface Report {
   id: string;
@@ -53,6 +54,16 @@ export default function ParentPage() {
     if (!id) { setLoading(false); return; }
 
     if (id.startsWith("demo-")) {
+      setChildName(DEMO_CHILD.name);
+      setQuestions(
+        DEMO_PARENT_QUESTIONS.map((q) => ({
+          id: String(q.id),
+          question_text: q.text,
+          status: (q.status === "대기 중" ? "대기중" : q.status) as Question["status"],
+          created_at: q.time ?? "",
+          delivered_count: q.count,
+        }))
+      );
       setLoading(false);
       return;
     }
@@ -79,7 +90,7 @@ export default function ParentPage() {
 
   async function addQuestion(e: React.FormEvent) {
     e.preventDefault();
-    if (!qInput.trim() || !childId) return;
+    if (!qInput.trim() || !childId || childId.startsWith("demo-")) return;
     setQLoading(true);
     try {
       await fetch("/api/parent/questions", {

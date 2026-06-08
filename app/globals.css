@@ -34,12 +34,9 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── PC 배경 ── */
-@media (min-width: 768px) {
-  body {
-    background: linear-gradient(135deg, #c4dbc4 0%, #9dbdb5 100%);
-    min-height: 100vh;
-  }
+/* ── 글로벌 기본 배경 ── */
+body {
+  background-color: var(--hb-bg);
 }
 
 /* ── 아이 화면 배경 ── */
@@ -80,7 +77,7 @@ body {
     flex: none;
     padding-top: 0;
     height: min(860px, 92vh);
-    width: 420px;
+    width: 480px;
     border-radius: 2.5rem;
     box-shadow:
       0 30px 60px rgba(0, 0, 0, 0.22),
@@ -135,7 +132,7 @@ body {
   --hb-success: #22C55E;
 }
 
-/* ── 부모 탭바 고정 (모바일: 전체 폭, PC: 중앙 정렬) ── */
+/* ── 부모 탭바 고정 (모바일/태블릿) ── */
 .parent-tab-bar {
   position: fixed;
   bottom: 0;
@@ -150,12 +147,41 @@ body {
 
 @media (min-width: 768px) {
   .parent-tab-bar {
-    max-width: 420px;
+    max-width: 720px;
     left: 50%;
     transform: translateX(-50%);
     border-left: 1px solid rgba(0, 0, 0, 0.06);
     border-right: 1px solid rgba(0, 0, 0, 0.06);
-    border-radius: 0 0 2rem 2rem;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.10);
+    border-radius: 1.5rem 1.5rem 0 0;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
   }
 }
+
+@media (min-width: 1024px) {
+  .parent-tab-bar {
+    display: none; /* PC웹에서는 숨김 */
+  }
+}
+
+/* ── PC 고정 좌측 사이드바 ── */
+.parent-sidebar {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .parent-sidebar {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 240px;
+    background: #ffffff;
+    border-right: 1px solid rgba(0, 0, 0, 0.06);
+    padding: 2.5rem 1.5rem;
+    z-index: 50;
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.03);
+  }
+}
+

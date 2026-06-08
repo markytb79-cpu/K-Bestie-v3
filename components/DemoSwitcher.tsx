@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DEMO_CHILD } from "@/lib/demo-data";
-import { clearStore } from "@/lib/store";
+import { clearStore, registerChild } from "@/lib/store";
 
 type Mode = "parent" | "child";
 
@@ -38,6 +38,7 @@ export default function DemoSwitcher({ mode }: { mode: Mode }) {
       if (!localStorage.getItem("k_child_id")) {
         localStorage.setItem("k_child_id", DEMO_CHILD.id);
       }
+      registerChild({ id: DEMO_CHILD.id, name: DEMO_CHILD.name, grade: DEMO_CHILD.grade, interests: [] });
       router.push("/child/home");
     } else {
       router.push("/parent/home");

@@ -12,7 +12,7 @@ export default function ChildFinishPage() {
 
   return (
     <div
-      className="min-h-dvh pb-[72px] flex flex-col md:max-w-[420px] md:mx-auto"
+      className="min-h-dvh pb-[72px] flex flex-col max-w-[480px] mx-auto shadow-sm"
       style={{ background: "var(--color-child-bg)", fontFamily: "var(--font-child)" }}
     >
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">

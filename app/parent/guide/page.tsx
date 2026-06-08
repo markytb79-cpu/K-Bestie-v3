@@ -5,6 +5,7 @@ import Link from "next/link";
 import ParentTabBar from "@/components/ParentTabBar";
 import { BackArrow } from "@/components/ParentIcons";
 import DemoSwitcher from "@/components/DemoSwitcher";
+import { DEMO_CHILD, DEMO_GUIDE, DEMO_PARENT_QUESTIONS } from "@/lib/demo-data";
 
 interface Question {
   id: string;
@@ -32,7 +33,21 @@ export default function ParentGuidePage() {
   useEffect(() => {
     const id = localStorage.getItem("k_child_id");
     setChildId(id);
-    if (!id || id.startsWith("demo-")) return;
+    if (!id) return;
+    if (id.startsWith("demo-")) {
+      setChildName(DEMO_CHILD.name);
+      setTodayGuide(DEMO_GUIDE.todayMessage);
+      setEmotionTags(DEMO_CHILD.emotionTags);
+      setQuestions(
+        DEMO_PARENT_QUESTIONS.map((q) => ({
+          id: String(q.id),
+          question_text: q.text,
+          status: (q.status === "대기 중" ? "대기중" : q.status) as Question["status"],
+          delivered_count: q.count,
+        }))
+      );
+      return;
+    }
 
     Promise.all([
       fetch(`/api/child/${encodeURIComponent(id)}`).then((r) => r.ok ? r.json() : null),
@@ -86,7 +101,7 @@ export default function ParentGuidePage() {
 
   return (
     <div
-      className="min-h-dvh pb-[72px] md:max-w-[420px] md:mx-auto"
+      className="min-h-dvh pb-[72px] lg:pb-12 lg:pl-[240px] w-full transition-all"
       style={{ background: "var(--hb-bg)" }}
     >
       {/* 헤더 */}
@@ -102,124 +117,135 @@ export default function ParentGuidePage() {
         </div>
       </div>
 
-      <div className="px-4 py-4 flex flex-col gap-3">
-        {/* 오늘의 한마디 */}
-        <div
-          className="rounded-2xl p-4"
-          style={{ background: "var(--hb-primary)", boxShadow: "var(--hb-shadow)" }}
-        >
-          <p className="text-xs font-bold mb-2 text-white opacity-80">오늘의 한마디</p>
-          <p className="text-sm font-semibold text-white leading-relaxed">
-            {todayGuide || "아이와 대화한 후 AI 가이드가 여기에 표시됩니다"}
-          </p>
-        </div>
-
-        {/* 감정 태그 */}
-        <div className="bg-white rounded-2xl p-4" style={{ boxShadow: "var(--hb-shadow)" }}>
-          <p className="text-xs font-bold mb-3" style={{ color: "var(--hb-muted)" }}>
-            {childName ? `오늘 ${childName}이의 감정` : "오늘의 감정"}
-          </p>
-          {emotionTags.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {emotionTags.map((tag) => (
-                <span
-                  key={tag}
-                  className="px-3 py-1.5 rounded-full text-xs font-medium"
-                  style={{ background: "var(--hb-primary-light)", color: "var(--hb-primary)" }}
-                >
-                  #{tag}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs" style={{ color: "var(--hb-muted)" }}>
-              대화 후 감정 태그가 표시됩니다
-            </p>
-          )}
-        </div>
-
-        {/* 케이에게 질문 등록 */}
-        <div className="bg-white rounded-2xl p-4" style={{ boxShadow: "var(--hb-shadow)" }}>
-          <p className="text-xs font-bold mb-3" style={{ color: "var(--hb-muted)" }}>
-            케이에게 전달할 질문
-          </p>
-          <form onSubmit={addQuestion} className="flex gap-2 mb-3">
-            <input
-              value={qInput}
-              onChange={(e) => setQInput(e.target.value)}
-              placeholder="케이가 아이에게 전달할 질문..."
-              maxLength={100}
-              className="flex-1 px-3 py-2.5 rounded-xl text-sm outline-none border-2 border-transparent transition-colors"
-              style={{ background: "#F9FAFB" }}
-              onFocus={(e) => (e.target.style.borderColor = "var(--hb-primary)")}
-              onBlur={(e) => (e.target.style.borderColor = "transparent")}
-            />
-            <button
-              type="submit"
-              disabled={qLoading || !qInput.trim() || !childId || !!childId?.startsWith("demo-")}
-              className="px-4 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50 shrink-0 transition-opacity"
-              style={{ background: "var(--hb-primary)" }}
+      <div className="max-w-6xl mx-auto px-4 py-4">
+        {/* 2열 반응형 그리드 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-5">
+          
+          {/* 왼쪽 열: 가이드 정보 */}
+          <div className="lg:col-span-7 flex flex-col gap-4">
+            {/* 오늘의 한마디 */}
+            <div
+              className="rounded-2xl p-5"
+              style={{ background: "var(--hb-primary)", boxShadow: "var(--hb-shadow)" }}
             >
-              등록
-            </button>
-          </form>
-          {childId?.startsWith("demo-") && (
-            <p className="text-xs mb-3" style={{ color: "var(--hb-muted)" }}>
-              💡 데모 모드에서는 질문 등록이 되지 않아요
-            </p>
-          )}
+              <p className="text-xs font-bold mb-2.5 text-white opacity-80">오늘의 한마디</p>
+              <p className="text-sm font-semibold text-white leading-relaxed">
+                {todayGuide || "아이와 대화한 후 AI 가이드가 여기에 표시됩니다"}
+              </p>
+            </div>
 
-          {/* 질문 목록 */}
-          <div className="flex flex-col gap-3">
-            {questions.map((q) => {
-              const style = STATUS_STYLES[q.status] ?? STATUS_STYLES["대기중"];
-              return (
-                <div key={q.id} className="flex items-start gap-3">
-                  <span className="text-lg mt-0.5">💬</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 leading-snug">{q.question_text}</p>
-                    {q.delivered_count > 0 && (
-                      <p className="text-xs mt-0.5" style={{ color: "var(--hb-muted)" }}>
-                        {q.delivered_count}회 전달
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+            {/* 감정 태그 */}
+            <div className="bg-white rounded-2xl p-5" style={{ boxShadow: "var(--hb-shadow)" }}>
+              <p className="text-xs font-bold mb-3.5" style={{ color: "var(--hb-muted)" }}>
+                {childName ? `오늘 ${childName}이의 감정` : "오늘의 감정"}
+              </p>
+              {emotionTags.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {emotionTags.map((tag) => (
                     <span
-                      className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                      style={{ background: style.bg, color: style.color }}
+                      key={tag}
+                      className="px-3.5 py-1.5 rounded-full text-xs font-semibold"
+                      style={{ background: "var(--hb-primary-light)", color: "var(--hb-primary)" }}
                     >
-                      {q.status === "대기중" ? "대기 중" : q.status}
+                      #{tag}
                     </span>
-                    {q.status === "대기중" && !childId?.startsWith("demo-") && (
-                      <button
-                        onClick={() => stopQuestion(q.id)}
-                        className="text-[11px] px-2 py-0.5 rounded-full"
-                        style={{ background: "#F3F4F6", color: "#6B7280" }}
-                      >
-                        중지
-                      </button>
-                    )}
-                  </div>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              ) : (
+                <p className="text-xs" style={{ color: "var(--hb-muted)" }}>
+                  대화 후 감정 태그가 표시됩니다
+                </p>
+              )}
+            </div>
 
-        {/* 대화 팁 */}
-        <div
-          className="rounded-2xl p-4"
-          style={{ background: "#FFFBEB", boxShadow: "var(--hb-shadow)" }}
-        >
-          <p className="text-xs font-bold mb-2" style={{ color: "#D97706" }}>
-            💛 대화 팁
-          </p>
-          <p className="text-sm text-gray-700 leading-relaxed">아이의 대답에 즉각 반응하지 말고 3초 여유를 두고 듣는 것이 효과적이에요.</p>
+            {/* 대화 팁 */}
+            <div
+              className="rounded-2xl p-5"
+              style={{ background: "#FFFBEB", boxShadow: "var(--hb-shadow)" }}
+            >
+              <p className="text-xs font-bold mb-2.5" style={{ color: "#D97706" }}>
+                💛 대화 팁
+              </p>
+              <p className="text-sm text-gray-700 leading-relaxed font-medium">아이의 대답에 즉각 반응하지 말고 3초 여유를 두고 듣는 것이 효과적이에요.</p>
+            </div>
+          </div>
+
+          {/* 오른쪽 열: 질문 등록 및 관리 */}
+          <div className="lg:col-span-5 flex flex-col gap-4">
+            {/* 케이에게 질문 등록 */}
+            <div className="bg-white rounded-2xl p-5" style={{ boxShadow: "var(--hb-shadow)" }}>
+              <p className="text-xs font-bold mb-3.5" style={{ color: "var(--hb-muted)" }}>
+                케이에게 전달할 질문
+              </p>
+              <form onSubmit={addQuestion} className="flex gap-2 mb-3.5">
+                <input
+                  value={qInput}
+                  onChange={(e) => setQInput(e.target.value)}
+                  placeholder="케이가 아이에게 전달할 질문..."
+                  maxLength={100}
+                  className="flex-1 px-3.5 py-3 rounded-xl text-sm outline-none border-2 border-transparent transition-colors"
+                  style={{ background: "#F9FAFB" }}
+                  onFocus={(e) => (e.target.style.borderColor = "var(--hb-primary)")}
+                  onBlur={(e) => (e.target.style.borderColor = "transparent")}
+                />
+                <button
+                  type="submit"
+                  disabled={qLoading || !qInput.trim() || !childId || !!childId?.startsWith("demo-")}
+                  className="px-4 py-3 rounded-xl text-white text-sm font-bold disabled:opacity-50 shrink-0 transition-opacity"
+                  style={{ background: "var(--hb-primary)" }}
+                >
+                  등록
+                </button>
+              </form>
+              {childId?.startsWith("demo-") && (
+                <p className="text-xs mb-3.5" style={{ color: "var(--hb-muted)" }}>
+                  💡 데모 모드에서는 질문 등록이 되지 않아요
+                </p>
+              )}
+
+              {/* 질문 목록 */}
+              <div className="flex flex-col gap-3">
+                {questions.map((q) => {
+                  const style = STATUS_STYLES[q.status] ?? STATUS_STYLES["대기중"];
+                  return (
+                    <div key={q.id} className="flex items-start gap-3 border-b border-gray-50 pb-3 last:border-0 last:pb-0">
+                      <span className="text-lg mt-0.5">💬</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 leading-snug">{q.question_text}</p>
+                        {q.delivered_count > 0 && (
+                          <p className="text-xs mt-1" style={{ color: "var(--hb-muted)" }}>
+                            {q.delivered_count}회 전달됨
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-2 shrink-0">
+                        <span
+                          className="px-2.5 py-0.5 rounded-full text-[10px] font-bold"
+                          style={{ background: style.bg, color: style.color }}
+                        >
+                          {q.status === "대기중" ? "대기 중" : q.status}
+                        </span>
+                        {q.status === "대기중" && !childId?.startsWith("demo-") && (
+                          <button
+                            onClick={() => stopQuestion(q.id)}
+                            className="text-[10px] px-2 py-0.5 rounded-full active:scale-95 transition-transform"
+                            style={{ background: "#F3F4F6", color: "#6B7280" }}
+                          >
+                            중지
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
         </div>
 
         {/* AI 고지 */}
-        <p className="text-xs text-center py-2" style={{ color: "var(--hb-muted)" }}>
+        <p className="text-xs text-center py-6 mt-2" style={{ color: "var(--hb-muted)" }}>
           이 가이드는 AI가 생성한 제안으로 참고용입니다.
         </p>
       </div>
@@ -228,4 +254,5 @@ export default function ParentGuidePage() {
       <ParentTabBar />
     </div>
   );
+
 }

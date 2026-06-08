@@ -44,6 +44,8 @@ function SettingsIcon({ active }: { active: boolean }) {
   );
 }
 
+import Image from "next/image";
+
 const TABS = [
   { href: "/parent/home", label: "홈", Icon: HomeIcon },
   { href: "/parent/report", label: "리포트", Icon: ReportIcon },
@@ -57,35 +59,97 @@ export default function ParentTabBar() {
   const badge = unreadCount(store);
 
   return (
-    <nav className="parent-tab-bar">
-      <div className="flex items-start justify-around h-full px-1">
-        {TABS.map((tab) => {
-          const active = pathname === tab.href || pathname.startsWith(tab.href + "/");
-          const showBadge = tab.isNotif && badge > 0 && !active;
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className="flex flex-col items-center gap-0.5 pt-3 min-w-[60px]"
-            >
-              <div className="relative">
-                <tab.Icon active={active} />
+    <>
+      {/* 1. 모바일 & 태블릿용 하단 탭바 */}
+      <nav className="parent-tab-bar">
+        <div className="flex items-start justify-around h-full px-1">
+          {TABS.map((tab) => {
+            const active = pathname === tab.href || pathname.startsWith(tab.href + "/");
+            const showBadge = tab.isNotif && badge > 0 && !active;
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className="flex flex-col items-center gap-0.5 pt-3 min-w-[60px]"
+              >
+                <div className="relative">
+                  <tab.Icon active={active} />
+                  {showBadge && (
+                    <span className="absolute -top-1 -right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+                      {badge > 9 ? "9+" : badge}
+                    </span>
+                  )}
+                </div>
+                <span
+                  className="text-[11px] font-medium"
+                  style={{ color: active ? "#5B5BD6" : "#9CA3AF" }}
+                >
+                  {tab.label}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
+
+      {/* 2. PC 데스크톱용 좌측 고정 사이드바 */}
+      <aside className="parent-sidebar">
+        {/* 서비스 로고 및 이름 */}
+        <div className="flex items-center gap-2.5 mb-10 px-1">
+          <Image
+            src="/character_logo.png"
+            alt="케이"
+            width={34}
+            height={34}
+            className="rounded-full object-cover"
+          />
+          <div>
+            <h1 className="text-sm font-bold text-gray-900 leading-none">내친구 케이</h1>
+            <p className="text-[10px] text-gray-400 mt-1.5">보호자 대시보드</p>
+          </div>
+        </div>
+
+        {/* 메뉴 리스트 */}
+        <div className="flex flex-col gap-1.5 flex-1">
+          {TABS.map((tab) => {
+            const active = pathname === tab.href || pathname.startsWith(tab.href + "/");
+            const showBadge = tab.isNotif && badge > 0;
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className="flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all duration-200"
+                style={{
+                  background: active ? "var(--hb-primary-light)" : "transparent",
+                  color: active ? "var(--hb-primary)" : "#4B5563",
+                }}
+              >
+                <div className="relative shrink-0 flex items-center">
+                  <tab.Icon active={active} />
+                  {showBadge && (
+                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full" />
+                  )}
+                </div>
+                <span className="text-sm font-semibold flex-1">{tab.label}</span>
                 {showBadge && (
-                  <span className="absolute -top-1 -right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
-                    {badge > 9 ? "9+" : badge}
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-red-100 text-red-600">
+                    {badge}
                   </span>
                 )}
-              </div>
-              <span
-                className="text-[11px] font-medium"
-                style={{ color: active ? "#5B5BD6" : "#9CA3AF" }}
-              >
-                {tab.label}
-              </span>
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* 하단 데일리 팁 */}
+        <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100/60 mt-auto">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">오늘의 소통 가이드</p>
+          <p className="text-xs text-gray-600 leading-relaxed">
+            아이의 감정 점수가 낮은 날에는 훈계하기보다, "오늘 마음 아픈 일 있었어?"라며 편안히 공감해 주세요. 💬
+          </p>
+        </div>
+      </aside>
+    </>
   );
 }
+

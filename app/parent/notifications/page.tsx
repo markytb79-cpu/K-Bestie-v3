@@ -24,7 +24,7 @@ export default function ParentNotificationsPage() {
 
   return (
     <div
-      className="min-h-dvh pb-[72px] md:max-w-[420px] md:mx-auto"
+      className="min-h-dvh pb-[72px] lg:pb-12 lg:pl-[240px] w-full transition-all"
       style={{ background: "var(--hb-bg)" }}
     >
       {/* 헤더 */}
@@ -40,14 +40,14 @@ export default function ParentNotificationsPage() {
           {unread > 0 && (
             <>
               <span
-                className="text-xs font-semibold px-2.5 py-1 rounded-full text-white"
+                className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
                 style={{ background: "var(--hb-danger)" }}
               >
                 {unread}
               </span>
               <button
                 onClick={markAllNotifsRead}
-                className="text-xs font-semibold px-3 py-1 rounded-full"
+                className="text-xs font-bold px-3 py-1.5 rounded-full active:scale-95 transition-transform"
                 style={{ background: "var(--hb-primary-light)", color: "var(--hb-primary)" }}
               >
                 모두 읽음
@@ -56,7 +56,7 @@ export default function ParentNotificationsPage() {
           )}
           {unread === 0 && (
             <span
-              className="text-xs font-semibold px-2.5 py-1 rounded-full"
+              className="text-xs font-bold px-2.5 py-1 rounded-full"
               style={{ background: "#F3F4F6", color: "#9CA3AF" }}
             >
               모두 읽음 ✓
@@ -65,18 +65,18 @@ export default function ParentNotificationsPage() {
         </div>
       </div>
 
-      <div className="px-4 py-4 flex flex-col gap-3">
+      <div className="max-w-3xl mx-auto px-4 py-6 flex flex-col gap-3.5">
         {notifs.length === 0 ? (
-          <div className="text-center py-16">
-            <p className="text-4xl mb-4">🔔</p>
-            <p className="text-sm font-semibold text-gray-600">새 알림이 없어요</p>
+          <div className="text-center py-20 bg-white rounded-2xl" style={{ boxShadow: "var(--hb-shadow)" }}>
+            <p className="text-5xl mb-4">🔔</p>
+            <p className="text-sm font-semibold text-gray-500">새로운 알림이 없어요</p>
           </div>
         ) : (
           notifs.map((notif) => (
             <button
               key={notif.id}
               onClick={() => markNotifRead(notif.id)}
-              className="w-full text-left rounded-2xl p-4 transition-opacity active:opacity-80"
+              className="w-full text-left rounded-2xl p-4.5 transition-all duration-200 active:scale-[0.99]"
               style={{
                 background: notif.read ? "#FAFAFA" : (LEVEL_BG[notif.level] ?? "#FFFFFF"),
                 border: `1.5px solid ${notif.read ? "#E5E7EB" : (LEVEL_BORDER[notif.level] ?? "#E5E7EB")}`,
@@ -84,25 +84,25 @@ export default function ParentNotificationsPage() {
                 opacity: notif.read ? 0.65 : 1,
               }}
             >
-              <div className="flex items-start gap-3">
+              <div className="flex items-start gap-3.5">
                 {!notif.read && (
                   <div
-                    className="w-2 h-2 rounded-full mt-1.5 shrink-0"
+                    className="w-2.5 h-2.5 rounded-full mt-1.5 shrink-0"
                     style={{ background: notif.level === "danger" ? "#EF4444" : notif.level === "warning" ? "#F59E0B" : "#22C55E" }}
                   />
                 )}
-                {notif.read && <div className="w-2 h-2 mt-1.5 shrink-0" />}
+                {notif.read && <div className="w-2.5 h-2.5 mt-1.5 shrink-0" />}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start justify-between gap-3">
                     <p className="text-sm font-bold text-gray-900 leading-snug">{notif.title}</p>
-                    <span className="text-xs shrink-0" style={{ color: "var(--hb-muted)" }}>{notif.time}</span>
+                    <span className="text-xs shrink-0 font-medium" style={{ color: "var(--hb-muted)" }}>{notif.time}</span>
                   </div>
-                  <p className="text-xs mt-1.5 leading-relaxed text-gray-600">{notif.body}</p>
+                  <p className="text-xs mt-2 leading-relaxed text-gray-600 font-medium">{notif.body}</p>
                   {notif.hasExpertCTA && !notif.read && (
                     <Link
                       href="/parent/expert"
                       onClick={(e) => e.stopPropagation()}
-                      className="mt-2.5 inline-block px-4 py-1.5 rounded-full text-xs font-bold text-white"
+                      className="mt-3.5 inline-block px-4 py-2 rounded-full text-xs font-bold text-white shadow-sm hover:shadow active:scale-95 transition-transform"
                       style={{ background: "var(--hb-danger)" }}
                     >
                       전문가와 연결하기 →
@@ -114,7 +114,7 @@ export default function ParentNotificationsPage() {
           ))
         )}
 
-        <p className="text-xs text-center py-2" style={{ color: "var(--hb-muted)" }}>
+        <p className="text-[11px] font-bold text-center py-4 uppercase tracking-wider" style={{ color: "var(--hb-muted)" }}>
           🟢 안정 · 🟡 주의 · 🔴 즉각 관심 필요
         </p>
       </div>

@@ -15,6 +15,7 @@ import {
   type StoreChild,
 } from "@/lib/store";
 import { createClient } from "@/lib/supabase/client";
+import { DEMO_PARENT_QUESTIONS } from "@/lib/demo-data";
 
 const GRADES = ["1학년", "2학년", "3학년", "4학년", "5학년", "6학년"];
 const INTERESTS = ["공룡", "우주", "동물", "그림", "음악", "스포츠", "요리", "게임", "과학", "책"];
@@ -63,7 +64,18 @@ export default function ParentSettingsPage() {
 
   useEffect(() => {
     const id = localStorage.getItem("k_child_id");
-    if (!id || id.startsWith("demo-")) return;
+    if (!id) return;
+    if (id.startsWith("demo-")) {
+      setQuestions(
+        DEMO_PARENT_QUESTIONS.map((q) => ({
+          id: String(q.id),
+          question_text: q.text,
+          status: (q.status === "대기 중" ? "대기중" : q.status) as Question["status"],
+          delivered_count: q.count,
+        }))
+      );
+      return;
+    }
 
     fetch(`/api/parent/questions?childId=${id}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -123,7 +135,7 @@ export default function ParentSettingsPage() {
 
   return (
     <div
-      className="min-h-dvh pb-[72px] md:max-w-[420px] md:mx-auto"
+      className="min-h-dvh pb-[72px] lg:pb-12 lg:pl-[240px] w-full transition-all"
       style={{ background: "var(--hb-bg)" }}
     >
       <div className="bg-white px-5 pt-12 pb-4 flex items-center gap-3">
@@ -131,152 +143,161 @@ export default function ParentSettingsPage() {
         <h1 className="text-[17px] font-bold text-gray-900">설정 ⚙️</h1>
       </div>
 
-      <div className="px-4 py-4 flex flex-col gap-4">
-        {/* 자녀 관리 */}
-        <div>
-          <SectionHeader title="자녀 관리" />
-          <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: "var(--hb-shadow)" }}>
-            {/* store에 등록된 아이들 */}
-            {storeChildren.map((child, i) => (
-              <button
-                key={child.id}
-                onClick={() => openEdit(child)}
-                className="flex items-center gap-3 px-4 py-3.5 w-full text-left active:bg-gray-50 transition-colors"
-                style={{ borderBottom: i < storeChildren.length - 1 ? "1px solid #F3F4F6" : "none" }}
-              >
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0"
-                  style={{ background: "var(--hb-primary-light)" }}
-                >
-                  🧒
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-gray-900">{child.name}</p>
-                  <p className="text-xs" style={{ color: "var(--hb-muted)" }}>{child.grade}</p>
-                </div>
-                <span className="text-xs font-medium px-2 py-0.5 rounded-full mr-1" style={{ background: "var(--hb-primary-light)", color: "var(--hb-primary)" }}>
-                  수정
-                </span>
-                <ChevronRight />
-              </button>
-            ))}
-
-            <Link
-              href="/onboarding"
-              className="flex items-center gap-3 px-4 py-3.5 w-full"
-            >
-              <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0"
-                style={{ border: "2px dashed #D1D5DB", color: "#9CA3AF" }}
-              >
-                +
-              </div>
-              <p className="text-sm font-medium" style={{ color: "var(--hb-muted)" }}>자녀 추가하기</p>
-            </Link>
-          </div>
-        </div>
-
-        {/* 부모 질문 관리 */}
-        <div>
-          <SectionHeader title="부모 질문 관리" />
-          <div className="bg-white rounded-2xl p-4" style={{ boxShadow: "var(--hb-shadow)" }}>
-            {questions.length === 0 ? (
-              <p className="text-sm text-center py-2" style={{ color: "var(--hb-muted)" }}>등록된 질문이 없어요</p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {questions.map((q) => {
-                  const style = STATUS_STYLES[q.status] ?? STATUS_STYLES["대기중"];
-                  return (
-                    <div key={q.id} className="flex items-start gap-3">
-                      <p className="text-sm text-gray-700 flex-1 leading-snug">{q.question_text}</p>
-                      <span
-                        className="shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                        style={{ background: style.bg, color: style.color }}
-                      >
-                        {q.status === "대기중" ? "대기 중" : q.status}
-                      </span>
+      <div className="max-w-4xl mx-auto px-4 py-4">
+        {/* 2열 반응형 그리드 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          
+          {/* 왼쪽 열 */}
+          <div className="flex flex-col gap-5">
+            {/* 자녀 관리 */}
+            <div>
+              <SectionHeader title="자녀 관리" />
+              <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: "var(--hb-shadow)" }}>
+                {storeChildren.map((child, i) => (
+                  <button
+                    key={child.id}
+                    onClick={() => openEdit(child)}
+                    className="flex items-center gap-3 px-4 py-3.5 w-full text-left active:bg-gray-50 transition-colors"
+                    style={{ borderBottom: i < storeChildren.length - 1 ? "1px solid #F3F4F6" : "none" }}
+                  >
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0"
+                      style={{ background: "var(--hb-primary-light)" }}
+                    >
+                      🧒
                     </div>
-                  );
-                })}
-              </div>
-            )}
-            <Link
-              href="/parent/guide"
-              className="mt-3 block text-center text-xs font-semibold py-2 rounded-xl"
-              style={{ background: "var(--hb-primary-light)", color: "var(--hb-primary)" }}
-            >
-              질문 추가하기 →
-            </Link>
-          </div>
-        </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-gray-900">{child.name}</p>
+                      <p className="text-xs" style={{ color: "var(--hb-muted)" }}>{child.grade}</p>
+                    </div>
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full mr-1" style={{ background: "var(--hb-primary-light)", color: "var(--hb-primary)" }}>
+                      수정
+                    </span>
+                    <ChevronRight />
+                  </button>
+                ))}
 
-        {/* 알림 설정 */}
-        <div>
-          <SectionHeader title="대화 알림" />
-          <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: "var(--hb-shadow)" }}>
-            {TOGGLE_ITEMS.map((item, i, arr) => (
-              <button
-                key={item.key}
-                onClick={() => setNotifSetting(item.key, !item.on)}
-                className="flex items-center justify-between px-4 py-3.5 w-full text-left"
-                style={{ borderBottom: i < arr.length - 1 ? "1px solid #F3F4F6" : "none" }}
-              >
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">{item.label}</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--hb-muted)" }}>{item.desc}</p>
-                </div>
-                <div
-                  className="w-11 h-6 rounded-full flex items-center px-0.5 shrink-0 transition-colors duration-200"
-                  style={{ background: item.on ? "var(--hb-primary)" : "#D1D5DB" }}
+                <Link
+                  href="/onboarding"
+                  className="flex items-center gap-3 px-4 py-3.5 w-full active:bg-gray-50 transition-colors"
                 >
                   <div
-                    className="w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-200"
-                    style={{ marginLeft: item.on ? "auto" : "0" }}
-                  />
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0"
+                    style={{ border: "2px dashed #D1D5DB", color: "#9CA3AF" }}
+                  >
+                    +
+                  </div>
+                  <p className="text-sm font-semibold" style={{ color: "var(--hb-muted)" }}>자녀 추가하기</p>
+                </Link>
+              </div>
+            </div>
+
+            {/* 부모 질문 관리 */}
+            <div>
+              <SectionHeader title="부모 질문 관리" />
+              <div className="bg-white rounded-2xl p-4" style={{ boxShadow: "var(--hb-shadow)" }}>
+                {questions.length === 0 ? (
+                  <p className="text-sm text-center py-2" style={{ color: "var(--hb-muted)" }}>등록된 질문이 없어요</p>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {questions.slice(0, 3).map((q) => {
+                      const style = STATUS_STYLES[q.status] ?? STATUS_STYLES["대기중"];
+                      return (
+                        <div key={q.id} className="flex items-start gap-3 border-b border-gray-50 pb-2 last:border-0 last:pb-0">
+                          <p className="text-sm font-semibold text-gray-700 flex-1 leading-snug">{q.question_text}</p>
+                          <span
+                            className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                            style={{ background: style.bg, color: style.color }}
+                          >
+                            {q.status === "대기중" ? "대기 중" : q.status}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <Link
+                  href="/parent/guide"
+                  className="mt-3 block text-center text-xs font-bold py-2.5 rounded-xl transition-opacity active:opacity-85"
+                  style={{ background: "var(--hb-primary-light)", color: "var(--hb-primary)" }}
+                >
+                  질문 추가/관리하기 →
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          {/* 오른쪽 열 */}
+          <div className="flex flex-col gap-5">
+            {/* 알림 설정 */}
+            <div>
+              <SectionHeader title="대화 알림" />
+              <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: "var(--hb-shadow)" }}>
+                {TOGGLE_ITEMS.map((item, i, arr) => (
+                  <button
+                    key={item.key}
+                    onClick={() => setNotifSetting(item.key, !item.on)}
+                    className="flex items-center justify-between px-4 py-3.5 w-full text-left active:bg-gray-50 transition-colors"
+                    style={{ borderBottom: i < arr.length - 1 ? "1px solid #F3F4F6" : "none" }}
+                  >
+                    <div>
+                      <p className="text-sm font-bold text-gray-900">{item.label}</p>
+                      <p className="text-xs mt-0.5" style={{ color: "var(--hb-muted)" }}>{item.desc}</p>
+                    </div>
+                    <div
+                      className="w-11 h-6 rounded-full flex items-center px-0.5 shrink-0 transition-colors duration-200"
+                      style={{ background: item.on ? "var(--hb-primary)" : "#D1D5DB" }}
+                    >
+                      <div
+                        className="w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-200"
+                        style={{ marginLeft: item.on ? "auto" : "0" }}
+                      />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 계정 정보 */}
+            <div>
+              <SectionHeader title="계정" />
+              <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: "var(--hb-shadow)" }}>
+                <div
+                  className="flex items-center justify-between px-4 py-3.5"
+                  style={{ borderBottom: "1px solid #F3F4F6" }}
+                >
+                  <p className="text-sm font-medium text-gray-700">이메일</p>
+                  <p className="text-sm font-semibold" style={{ color: "var(--hb-muted)" }}>
+                    {userEmail ?? "로딩 중..."}
+                  </p>
                 </div>
+                <div className="flex items-center justify-between px-4 py-3.5">
+                  <p className="text-sm font-medium text-gray-700">플랜</p>
+                  <p className="text-sm font-semibold" style={{ color: "var(--hb-muted)" }}>무료</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 로그아웃 */}
+            <div className="mt-2">
+              <button
+                onClick={handleLogout}
+                className="w-full py-3.5 rounded-2xl text-sm font-bold border transition-opacity active:opacity-70"
+                style={{ borderColor: "rgba(239,68,68,0.25)", color: "#DC2626", background: "rgba(239,68,68,0.04)" }}
+              >
+                로그아웃
               </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 계정 정보 */}
-        <div>
-          <SectionHeader title="계정" />
-          <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: "var(--hb-shadow)" }}>
-            <div
-              className="flex items-center justify-between px-4 py-3.5"
-              style={{ borderBottom: "1px solid #F3F4F6" }}
-            >
-              <p className="text-sm text-gray-700">이메일</p>
-              <p className="text-sm font-medium" style={{ color: "var(--hb-muted)" }}>
-                {userEmail ?? "로딩 중..."}
+              <p className="text-center text-[10px] mt-2 font-medium" style={{ color: "#9CA3AF" }}>
+                로그아웃해도 아이·대화 데이터는 유지됩니다
               </p>
-            </div>
-            <div className="flex items-center justify-between px-4 py-3.5">
-              <p className="text-sm text-gray-700">플랜</p>
-              <p className="text-sm font-medium" style={{ color: "var(--hb-muted)" }}>무료</p>
-            </div>
-          </div>
-        </div>
+            </div> {/* 로그아웃 div 닫기 */}
+          </div> {/* 오른쪽 열 div 닫기 */}
+        </div> {/* grid div 닫기 */}
 
-        {/* 로그아웃 */}
-        <div>
-          <button
-            onClick={handleLogout}
-            className="w-full py-3.5 rounded-2xl text-sm font-semibold border transition-opacity active:opacity-70"
-            style={{ borderColor: "rgba(239,68,68,0.25)", color: "#DC2626", background: "rgba(239,68,68,0.04)" }}
-          >
-            로그아웃
-          </button>
-          <p className="text-center text-[11px] mt-2" style={{ color: "#9CA3AF" }}>
-            로그아웃해도 아이·대화 데이터는 유지됩니다
-          </p>
-        </div>
-
-        <p className="text-center text-xs py-2" style={{ color: "var(--hb-muted)" }}>
+        <p className="text-center text-xs py-6 mt-4" style={{ color: "var(--hb-muted)" }}>
           내친구 케이 v3.0 · 데모 빌드
         </p>
-      </div>
+      </div> {/* max-w-4xl mx-auto px-4 py-4 div 닫기 */}
 
       <DemoSwitcher mode="parent" />
       <ParentTabBar />
