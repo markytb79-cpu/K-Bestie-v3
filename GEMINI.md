@@ -319,7 +319,7 @@ function extractJSON(text: string) {
 - 가능하면 영어 경로 사용
 - 실행 정책 오류 시 자동 해결 시도
 - localhost 접속 안 되면 `127.0.0.1`도 자동 시도
-- 필요시 `vite.config.ts`도 자동 수정
+
 
 ### 한글 깨짐 방지 (Encoding Fix)
 1. 터미널 코드페이지 전환: 모든 명령 실행 전 `chcp 65001`
@@ -405,7 +405,6 @@ function extractJSON(text: string) {
 
 ## 17. 테스트 규칙
 
-- 테스트 프레임워크: **Vitest**
 - 테스트 파일 위치: 해당 파일과 같은 폴더에 `*.test.ts` 또는 `__tests__/` 폴더
 - 새로운 API 연동 함수 작성 시 기본 동작 테스트 포함
 - 사용자가 별도로 요청하지 않으면 테스트는 작성하지 않아도 됨
