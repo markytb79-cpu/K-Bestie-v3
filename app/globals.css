@@ -1,0 +1,161 @@
+@import "tailwindcss";
+
+@theme {
+  /* ── 브랜드 컬러 ── */
+  --color-primary: #1A6B5A;
+  --color-primary-light: #2a8a72;
+  --color-accent: hsl(17 76% 63%);
+
+  /* ── 배경 ── */
+  --color-bg: #FFF8E7;
+  --color-child-bg: hsl(44 100% 95%);
+  --color-parent-bg: hsl(210 17% 98%);
+
+  /* ── 텍스트 ── */
+  --color-text-base: #1a1a1a;
+  --color-text-muted: #6b7280;
+
+  /* ── 폰트 ── */
+  --font-base: 'Pretendard Variable', 'Pretendard', -apple-system, sans-serif;
+  --font-child: 'NanumSquareRound', 'Pretendard Variable', sans-serif;
+
+  /* ── 레이아웃 ── */
+  --max-width-app: 480px;
+  --radius-base: 1rem;
+  --radius-sm: 0.5rem;
+}
+
+/* ── 글로벌 기본값 ── */
+html,
+body {
+  font-family: var(--font-base);
+  background-color: var(--color-bg);
+  color: var(--color-text-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── PC 배경 ── */
+@media (min-width: 768px) {
+  body {
+    background: linear-gradient(135deg, #c4dbc4 0%, #9dbdb5 100%);
+    min-height: 100vh;
+  }
+}
+
+/* ── 아이 화면 배경 ── */
+.child-screen {
+  background-color: var(--color-child-bg);
+  font-family: var(--font-child);
+}
+
+/* ── 부모 화면 배경 ── */
+.parent-screen {
+  background-color: var(--color-parent-bg);
+}
+
+/* ── 채팅 페이지 PC 쉘 (폰-인-브라우저) ── */
+.chat-page-root {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-page-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+@media (min-width: 768px) {
+  .chat-page-root {
+    background: linear-gradient(135deg, #c4dbc4 0%, #9dbdb5 100%);
+    align-items: center;
+    justify-content: center;
+  }
+
+  .chat-page-shell {
+    flex: none;
+    padding-top: 0;
+    height: min(860px, 92vh);
+    width: 420px;
+    border-radius: 2.5rem;
+    box-shadow:
+      0 30px 60px rgba(0, 0, 0, 0.22),
+      0 0 0 1px rgba(255, 255, 255, 0.14);
+    overflow: hidden;
+  }
+}
+
+/* ── 케이 타이핑 점 애니메이션 ── */
+@keyframes kDot {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  30% {
+    transform: translateY(-7px);
+    opacity: 1;
+  }
+}
+
+.k-typing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 3.6em;
+}
+
+.k-typing span {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: kDot 1.3s ease-in-out infinite;
+}
+
+.k-typing span:nth-child(2) { animation-delay: 0.18s; }
+.k-typing span:nth-child(3) { animation-delay: 0.36s; }
+
+/* ── HeartBloom 부모 신규 디자인 변수 ── */
+:root {
+  --hb-primary: #5B5BD6;
+  --hb-primary-light: #EDEDFC;
+  --hb-bg: #F4F4F8;
+  --hb-card: #FFFFFF;
+  --hb-border: rgba(0, 0, 0, 0.06);
+  --hb-shadow: 0 1px 8px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --hb-muted: #6B7280;
+  --hb-danger: #EF4444;
+  --hb-warning: #F59E0B;
+  --hb-success: #22C55E;
+}
+
+/* ── 부모 탭바 고정 (모바일: 전체 폭, PC: 중앙 정렬) ── */
+.parent-tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 68px;
+  background: #ffffff;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  z-index: 50;
+}
+
+@media (min-width: 768px) {
+  .parent-tab-bar {
+    max-width: 420px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 1px solid rgba(0, 0, 0, 0.06);
+    border-right: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 0 0 2rem 2rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.10);
+  }
+}

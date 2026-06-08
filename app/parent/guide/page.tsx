@@ -1,0 +1,231 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import ParentTabBar from "@/components/ParentTabBar";
+import { BackArrow } from "@/components/ParentIcons";
+import DemoSwitcher from "@/components/DemoSwitcher";
+
+interface Question {
+  id: string;
+  question_text: string;
+  status: "대기중" | "전달됨" | "중지됨";
+  delivered_count: number;
+}
+
+const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
+  "전달됨": { bg: "#DCFCE7", color: "#15803D" },
+  "대기중": { bg: "#F3F4F6", color: "#6B7280" },
+  "중지됨": { bg: "#FEF2F2", color: "#DC2626" },
+  "대기 중": { bg: "#F3F4F6", color: "#6B7280" },
+};
+
+export default function ParentGuidePage() {
+  const [childName, setChildName] = useState("");
+  const [todayGuide, setTodayGuide] = useState("");
+  const [emotionTags, setEmotionTags] = useState<string[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [qInput, setQInput] = useState("");
+  const [qLoading, setQLoading] = useState(false);
+  const [childId, setChildId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const id = localStorage.getItem("k_child_id");
+    setChildId(id);
+    if (!id || id.startsWith("demo-")) return;
+
+    Promise.all([
+      fetch(`/api/child/${encodeURIComponent(id)}`).then((r) => r.ok ? r.json() : null),
+      fetch(`/api/parent/reports?childId=${id}`).then((r) => r.ok ? r.json() : null),
+      fetch(`/api/parent/questions?childId=${id}`).then((r) => r.ok ? r.json() : null),
+    ]).then(([childData, reportData, qData]) => {
+      if (childData?.name) setChildName(childData.name);
+      const reports = reportData?.reports ?? [];
+      if (reports.length > 0) {
+        const latest = reports[0];
+        if (latest.emotion_tags?.length > 0) setEmotionTags(latest.emotion_tags);
+        if (latest.parent_guide) setTodayGuide(latest.parent_guide);
+      }
+      setQuestions(qData?.questions ?? []);
+    }).catch(() => {});
+  }, []);
+
+  const refreshQuestions = () => {
+    if (!childId || childId.startsWith("demo-")) return;
+    fetch(`/api/parent/questions?childId=${childId}`)
+      .then((r) => r.json())
+      .then((d) => setQuestions(d.questions ?? []));
+  };
+
+  async function addQuestion(e: React.FormEvent) {
+    e.preventDefault();
+    if (!qInput.trim() || !childId || childId.startsWith("demo-")) return;
+    setQLoading(true);
+    try {
+      await fetch("/api/parent/questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ childId, questionText: qInput.trim() }),
+      });
+      setQInput("");
+      refreshQuestions();
+    } finally {
+      setQLoading(false);
+    }
+  }
+
+  async function stopQuestion(id: string) {
+    if (!childId || childId.startsWith("demo-")) return;
+    await fetch(`/api/parent/questions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "중지됨" }),
+    });
+    refreshQuestions();
+  }
+
+  return (
+    <div
+      className="min-h-dvh pb-[72px] md:max-w-[420px] md:mx-auto"
+      style={{ background: "var(--hb-bg)" }}
+    >
+      {/* 헤더 */}
+      <div className="bg-white px-5 pt-12 pb-4 flex items-center gap-3">
+        <Link href="/parent/home" style={{ color: "var(--hb-primary)" }}>
+          <BackArrow />
+        </Link>
+        <div>
+          <p className="text-xs font-medium" style={{ color: "var(--hb-muted)" }}>
+            오늘의 가이드
+          </p>
+          <h1 className="text-[17px] font-bold text-gray-900">대화 가이드 📖</h1>
+        </div>
+      </div>
+
+      <div className="px-4 py-4 flex flex-col gap-3">
+        {/* 오늘의 한마디 */}
+        <div
+          className="rounded-2xl p-4"
+          style={{ background: "var(--hb-primary)", boxShadow: "var(--hb-shadow)" }}
+        >
+          <p className="text-xs font-bold mb-2 text-white opacity-80">오늘의 한마디</p>
+          <p className="text-sm font-semibold text-white leading-relaxed">
+            {todayGuide || "아이와 대화한 후 AI 가이드가 여기에 표시됩니다"}
+          </p>
+        </div>
+
+        {/* 감정 태그 */}
+        <div className="bg-white rounded-2xl p-4" style={{ boxShadow: "var(--hb-shadow)" }}>
+          <p className="text-xs font-bold mb-3" style={{ color: "var(--hb-muted)" }}>
+            {childName ? `오늘 ${childName}이의 감정` : "오늘의 감정"}
+          </p>
+          {emotionTags.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {emotionTags.map((tag) => (
+                <span
+                  key={tag}
+                  className="px-3 py-1.5 rounded-full text-xs font-medium"
+                  style={{ background: "var(--hb-primary-light)", color: "var(--hb-primary)" }}
+                >
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs" style={{ color: "var(--hb-muted)" }}>
+              대화 후 감정 태그가 표시됩니다
+            </p>
+          )}
+        </div>
+
+        {/* 케이에게 질문 등록 */}
+        <div className="bg-white rounded-2xl p-4" style={{ boxShadow: "var(--hb-shadow)" }}>
+          <p className="text-xs font-bold mb-3" style={{ color: "var(--hb-muted)" }}>
+            케이에게 전달할 질문
+          </p>
+          <form onSubmit={addQuestion} className="flex gap-2 mb-3">
+            <input
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
+              placeholder="케이가 아이에게 전달할 질문..."
+              maxLength={100}
+              className="flex-1 px-3 py-2.5 rounded-xl text-sm outline-none border-2 border-transparent transition-colors"
+              style={{ background: "#F9FAFB" }}
+              onFocus={(e) => (e.target.style.borderColor = "var(--hb-primary)")}
+              onBlur={(e) => (e.target.style.borderColor = "transparent")}
+            />
+            <button
+              type="submit"
+              disabled={qLoading || !qInput.trim() || !childId || !!childId?.startsWith("demo-")}
+              className="px-4 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50 shrink-0 transition-opacity"
+              style={{ background: "var(--hb-primary)" }}
+            >
+              등록
+            </button>
+          </form>
+          {childId?.startsWith("demo-") && (
+            <p className="text-xs mb-3" style={{ color: "var(--hb-muted)" }}>
+              💡 데모 모드에서는 질문 등록이 되지 않아요
+            </p>
+          )}
+
+          {/* 질문 목록 */}
+          <div className="flex flex-col gap-3">
+            {questions.map((q) => {
+              const style = STATUS_STYLES[q.status] ?? STATUS_STYLES["대기중"];
+              return (
+                <div key={q.id} className="flex items-start gap-3">
+                  <span className="text-lg mt-0.5">💬</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 leading-snug">{q.question_text}</p>
+                    {q.delivered_count > 0 && (
+                      <p className="text-xs mt-0.5" style={{ color: "var(--hb-muted)" }}>
+                        {q.delivered_count}회 전달
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                    <span
+                      className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                      style={{ background: style.bg, color: style.color }}
+                    >
+                      {q.status === "대기중" ? "대기 중" : q.status}
+                    </span>
+                    {q.status === "대기중" && !childId?.startsWith("demo-") && (
+                      <button
+                        onClick={() => stopQuestion(q.id)}
+                        className="text-[11px] px-2 py-0.5 rounded-full"
+                        style={{ background: "#F3F4F6", color: "#6B7280" }}
+                      >
+                        중지
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 대화 팁 */}
+        <div
+          className="rounded-2xl p-4"
+          style={{ background: "#FFFBEB", boxShadow: "var(--hb-shadow)" }}
+        >
+          <p className="text-xs font-bold mb-2" style={{ color: "#D97706" }}>
+            💛 대화 팁
+          </p>
+          <p className="text-sm text-gray-700 leading-relaxed">아이의 대답에 즉각 반응하지 말고 3초 여유를 두고 듣는 것이 효과적이에요.</p>
+        </div>
+
+        {/* AI 고지 */}
+        <p className="text-xs text-center py-2" style={{ color: "var(--hb-muted)" }}>
+          이 가이드는 AI가 생성한 제안으로 참고용입니다.
+        </p>
+      </div>
+
+      <DemoSwitcher mode="parent" />
+      <ParentTabBar />
+    </div>
+  );
+}
