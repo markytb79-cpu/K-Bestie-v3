@@ -155,7 +155,7 @@ $env:SUPABASE_ACCESS_TOKEN = "sbp_실제토큰값..."
 
 ## 5. 기술 스택 (고정)
 
-- React + Vite + TypeScript
+- React + Next.js + TypeScript
 - Tailwind CSS
 - Supabase
 - Node.js
@@ -304,7 +304,7 @@ function extractJSON(text: string) {
 
 - `.env` 생성/수정 시 반드시 **Node.js 명령어**로 처리
 - 에이전트 파일 생성 도구(file write)로 `.env` 만들지 않음
-- PowerShell의 `Out-File`, `Set-Content`, `>` 리다이렉트 금지 (UTF-16LE로 저장되어 Vite가 읽지 못함)
+- PowerShell의 `Out-File`, `Set-Content`, `>` 리다이렉트 금지 (UTF-16LE로 저장되어 읽지 못함)
 - 반드시 Node.js로 생성:
     ```bash
     node -e "require('fs').writeFileSync('.env.local', 'KEY=VALUE\n', 'utf8')"
