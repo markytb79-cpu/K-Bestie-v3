@@ -129,6 +129,65 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
               </div>
             </div>
 
+            {/* 4분할 분석 카드 */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm" style={{ boxShadow: "var(--hb-shadow)" }}>
+              <p className="text-xs font-bold mb-4" style={{ color: "var(--hb-muted)" }}>
+                오늘의 영역별 분석 📊
+              </p>
+              <div className="grid grid-cols-2 gap-3.5">
+                
+                {/* 1. 감정변화 */}
+                <div className="p-3.5 rounded-2xl bg-indigo-50/20 border border-gray-100/80 flex flex-col justify-between hover:bg-indigo-50/40 transition-all duration-200">
+                  <div>
+                    <span className="text-xs font-bold text-gray-400">감정 변화</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span className="text-sm font-bold text-gray-800">
+                      {report.mood_score >= 6 ? "🟢 평온" : "🟡 보통"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. 교우관계 */}
+                <div className="p-3.5 rounded-2xl bg-indigo-50/20 border border-gray-100/80 flex flex-col justify-between hover:bg-indigo-50/40 transition-all duration-200">
+                  <div>
+                    <span className="text-xs font-bold text-gray-400">교우 관계</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span className="text-sm font-bold text-gray-800">
+                      {report.emotion_tags.some(t => t.includes("친구") || t.includes("싸움") || t.includes("다툼")) ? "🟡 지침" : "🟢 평온"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. 학교스트레스 */}
+                <div className="p-3.5 rounded-2xl bg-indigo-50/20 border border-gray-100/80 flex flex-col justify-between hover:bg-indigo-50/40 transition-all duration-200">
+                  <div>
+                    <span className="text-xs font-bold text-gray-400">학교 스트레스</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span className="text-sm font-bold text-gray-800">
+                      {report.emotion_tags.some(t => t.includes("학교") || t.includes("시험") || t.includes("공부") || t.includes("숙제")) ? "🟡 지침" : "🟢 평온"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4. 에너지 */}
+                <div className="p-3.5 rounded-2xl bg-indigo-50/20 border border-gray-100/80 flex flex-col justify-between hover:bg-indigo-50/40 transition-all duration-200">
+                  <div>
+                    <span className="text-xs font-bold text-gray-400">에너지 수준</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span className="text-sm font-bold text-gray-800">
+                      {report.mood_score >= 7 ? "🟢 활기참" : "🟡 보통"}
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+
             {/* 한 줄 요약 */}
             <div className="bg-white rounded-2xl p-5 shadow-sm" style={{ boxShadow: "var(--hb-shadow)" }}>
               <p className="text-xs font-bold mb-2" style={{ color: "var(--hb-muted)" }}>

@@ -245,15 +245,12 @@ CREATE POLICY "families_update_owner"
 -- ── family_members ───────────────────────────────────────────
 ALTER TABLE family_members ENABLE ROW LEVEL SECURITY;
 
+-- 자기 참조 EXISTS 제거 — PostgreSQL 무한 재귀 방지
 CREATE POLICY "family_members_select"
   ON family_members FOR SELECT
   USING (
     auth.role() = 'service_role'
     OR user_id = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM family_members fm2
-      WHERE fm2.family_id = family_members.family_id AND fm2.user_id = auth.uid()
-    )
   );
 
 CREATE POLICY "family_members_insert"

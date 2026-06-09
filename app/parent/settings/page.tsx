@@ -40,8 +40,9 @@ function SectionHeader({ title }: { title: string }) {
 export default function ParentSettingsPage() {
   const router = useRouter();
   const store = useStore();
-  const { reportAlert, emotionAlert, weeklySummary } = store.notifSettings;
+  const { reportAlert, weeklySummary } = store.notifSettings;
 
+  const [mounted, setMounted] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
@@ -54,6 +55,7 @@ export default function ParentSettingsPage() {
 
   // 로그인 이메일 로드
   useEffect(() => {
+    setMounted(true);
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => {
       if (data.user?.email) setUserEmail(data.user.email);
@@ -69,6 +71,14 @@ export default function ParentSettingsPage() {
       .then((qData) => setQuestions(qData?.questions ?? []))
       .catch(() => {});
   }, []);
+
+  if (!mounted) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center" style={{ background: "var(--hb-bg)" }}>
+        <div className="w-8 h-8 rounded-full animate-pulse" style={{ background: "var(--hb-primary)" }} />
+      </div>
+    );
+  }
 
   function openEdit(child: StoreChild) {
     setEditChild(child);
@@ -114,7 +124,6 @@ export default function ParentSettingsPage() {
 
   const TOGGLE_ITEMS = [
     { key: "reportAlert" as const,   label: "리포트 알림",   desc: "대화 후 리포트 도착 시",   on: reportAlert },
-    { key: "emotionAlert" as const,  label: "감정 위험 알림", desc: "주의 신호 감지 시 즉시",   on: emotionAlert },
     { key: "weeklySummary" as const, label: "주간 요약",      desc: "매주 일요일 오전",         on: weeklySummary },
   ];
 

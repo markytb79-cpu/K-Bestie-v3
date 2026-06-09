@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useStore } from "@/hooks/useStore";
@@ -56,7 +57,13 @@ const TABS = [
 export default function ParentTabBar() {
   const pathname = usePathname();
   const store = useStore();
-  const badge = unreadCount(store);
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const badge = mounted ? unreadCount(store) : 0;
 
   return (
     <>

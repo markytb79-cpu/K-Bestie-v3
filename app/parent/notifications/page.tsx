@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import ParentTabBar from "@/components/ParentTabBar";
 import { BackArrow } from "@/components/ParentIcons";
@@ -18,6 +18,19 @@ export default function ParentNotificationsPage() {
   const store = useStore();
   const notifs = store.notifications;
   const unread = notifs.filter((n) => !n.read).length;
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center" style={{ background: "var(--hb-bg)" }}>
+        <div className="w-8 h-8 rounded-full animate-pulse" style={{ background: "var(--hb-primary)" }} />
+      </div>
+    );
+  }
 
   // 페이지 떠날 때 자동 읽음 처리 대신, 명시적 버튼으로 처리
 
