@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ParentTabBar from "@/components/ParentTabBar";
 import { BackArrow, ChevronRight } from "@/components/ParentIcons";
-import DemoSwitcher from "@/components/DemoSwitcher";
 import { useStore } from "@/hooks/useStore";
 import {
   setNotifSetting,
@@ -15,7 +14,6 @@ import {
   type StoreChild,
 } from "@/lib/store";
 import { createClient } from "@/lib/supabase/client";
-import { DEMO_PARENT_QUESTIONS } from "@/lib/demo-data";
 
 const GRADES = ["1학년", "2학년", "3학년", "4학년", "5학년", "6학년"];
 const INTERESTS = ["공룡", "우주", "동물", "그림", "음악", "스포츠", "요리", "게임", "과학", "책"];
@@ -65,17 +63,6 @@ export default function ParentSettingsPage() {
   useEffect(() => {
     const id = localStorage.getItem("k_child_id");
     if (!id) return;
-    if (id.startsWith("demo-")) {
-      setQuestions(
-        DEMO_PARENT_QUESTIONS.map((q) => ({
-          id: String(q.id),
-          question_text: q.text,
-          status: (q.status === "대기 중" ? "대기중" : q.status) as Question["status"],
-          delivered_count: q.count,
-        }))
-      );
-      return;
-    }
 
     fetch(`/api/parent/questions?childId=${id}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -295,11 +282,10 @@ export default function ParentSettingsPage() {
         </div> {/* grid div 닫기 */}
 
         <p className="text-center text-xs py-6 mt-4" style={{ color: "var(--hb-muted)" }}>
-          내친구 케이 v3.0 · 데모 빌드
+          내친구 케이 v3.0
         </p>
       </div> {/* max-w-4xl mx-auto px-4 py-4 div 닫기 */}
 
-      <DemoSwitcher mode="parent" />
       <ParentTabBar />
 
       {/* ── 아이 수정 바텀 시트 ─────────────────────────────────────── */}

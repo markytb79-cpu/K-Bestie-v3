@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ChildTabBar from "@/components/ChildTabBar";
-import DemoSwitcher from "@/components/DemoSwitcher";
 import { useStore } from "@/hooks/useStore";
 
 type ChildInfo = { id: string; name: string; grade: string };
@@ -101,7 +100,6 @@ export default function ChildHomePage() {
             </button>
           </form>
         </div>
-        <DemoSwitcher mode="child" />
         <ChildTabBar />
       </div>
     );
@@ -290,7 +288,6 @@ export default function ChildHomePage() {
         </div>
       </div>
 
-      <DemoSwitcher mode="child" />
       <ChildTabBar />
     </div>
   );

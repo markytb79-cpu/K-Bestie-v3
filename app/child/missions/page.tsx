@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import ChildTabBar from "@/components/ChildTabBar";
-import DemoSwitcher from "@/components/DemoSwitcher";
 import { useStore } from "@/hooks/useStore";
 import { toggleMission, setMoodScore } from "@/lib/store";
 
@@ -185,7 +184,6 @@ export default function ChildMissionsPage() {
         </div>
       </div>
 
-      <DemoSwitcher mode="child" />
       <ChildTabBar />
     </div>
   );

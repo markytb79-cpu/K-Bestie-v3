@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import Link from "next/link";
 import ParentTabBar from "@/components/ParentTabBar";
 import { BackArrow } from "@/components/ParentIcons";
-import DemoSwitcher from "@/components/DemoSwitcher";
 import { useStore } from "@/hooks/useStore";
 import { markNotifRead, markAllNotifsRead } from "@/lib/store";
 
@@ -119,7 +118,6 @@ export default function ParentNotificationsPage() {
         </p>
       </div>
 
-      <DemoSwitcher mode="parent" />
       <ParentTabBar />
     </div>
   );

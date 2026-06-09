@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import ParentTabBar from "@/components/ParentTabBar";
 import { ChevronRight } from "@/components/ParentIcons";
-import DemoSwitcher from "@/components/DemoSwitcher";
 import { useStore } from "@/hooks/useStore";
 
 function BellSvg() {
@@ -54,7 +53,7 @@ export default function ParentHomePage() {
   }, [children.length, activeIdx]);
 
   useEffect(() => {
-    if (!activeChild || activeChild.id.startsWith("demo-")) {
+    if (!activeChild) {
       setLatestReport(null);
       setReportCount(0);
       setReportLoading(false);
@@ -187,7 +186,6 @@ export default function ParentHomePage() {
             </button>
           </form>
         </div>
-        <DemoSwitcher mode="parent" />
         <ParentTabBar />
       </div>
     );
@@ -214,7 +212,6 @@ export default function ParentHomePage() {
             아이 추가하기
           </Link>
         </div>
-        <DemoSwitcher mode="parent" />
         <ParentTabBar />
       </div>
     );
@@ -497,7 +494,6 @@ export default function ParentHomePage() {
         </>
       )}
 
-      <DemoSwitcher mode="parent" />
       <ParentTabBar />
     </div>
   );

@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import ParentTabBar from "@/components/ParentTabBar";
 import { BackArrow } from "@/components/ParentIcons";
-import DemoSwitcher from "@/components/DemoSwitcher";
 
 interface Report {
   id: string;
@@ -49,7 +48,7 @@ export default function ParentReportPage() {
 
   useEffect(() => {
     const id = localStorage.getItem("k_child_id");
-    if (!id || id.startsWith("demo-")) {
+    if (!id) {
       setLoading(false);
       return;
     }
@@ -169,7 +168,6 @@ export default function ParentReportPage() {
         )}
       </div>
 
-      <DemoSwitcher mode="parent" />
       <ParentTabBar />
     </div>
   );

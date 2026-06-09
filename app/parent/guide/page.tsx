@@ -4,8 +4,6 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import ParentTabBar from "@/components/ParentTabBar";
 import { BackArrow } from "@/components/ParentIcons";
-import DemoSwitcher from "@/components/DemoSwitcher";
-import { DEMO_CHILD, DEMO_GUIDE, DEMO_PARENT_QUESTIONS } from "@/lib/demo-data";
 
 interface Question {
   id: string;
@@ -34,20 +32,6 @@ export default function ParentGuidePage() {
     const id = localStorage.getItem("k_child_id");
     setChildId(id);
     if (!id) return;
-    if (id.startsWith("demo-")) {
-      setChildName(DEMO_CHILD.name);
-      setTodayGuide(DEMO_GUIDE.todayMessage);
-      setEmotionTags(DEMO_CHILD.emotionTags);
-      setQuestions(
-        DEMO_PARENT_QUESTIONS.map((q) => ({
-          id: String(q.id),
-          question_text: q.text,
-          status: (q.status === "대기 중" ? "대기중" : q.status) as Question["status"],
-          delivered_count: q.count,
-        }))
-      );
-      return;
-    }
 
     Promise.all([
       fetch(`/api/child/${encodeURIComponent(id)}`).then((r) => r.ok ? r.json() : null),
@@ -66,7 +50,7 @@ export default function ParentGuidePage() {
   }, []);
 
   const refreshQuestions = () => {
-    if (!childId || childId.startsWith("demo-")) return;
+    if (!childId) return;
     fetch(`/api/parent/questions?childId=${childId}`)
       .then((r) => r.json())
       .then((d) => setQuestions(d.questions ?? []));
@@ -74,7 +58,7 @@ export default function ParentGuidePage() {
 
   async function addQuestion(e: React.FormEvent) {
     e.preventDefault();
-    if (!qInput.trim() || !childId || childId.startsWith("demo-")) return;
+    if (!qInput.trim() || !childId) return;
     setQLoading(true);
     try {
       await fetch("/api/parent/questions", {
@@ -90,7 +74,7 @@ export default function ParentGuidePage() {
   }
 
   async function stopQuestion(id: string) {
-    if (!childId || childId.startsWith("demo-")) return;
+    if (!childId) return;
     await fetch(`/api/parent/questions/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -190,18 +174,13 @@ export default function ParentGuidePage() {
                 />
                 <button
                   type="submit"
-                  disabled={qLoading || !qInput.trim() || !childId || !!childId?.startsWith("demo-")}
+                  disabled={qLoading || !qInput.trim() || !childId}
                   className="px-4 py-3 rounded-xl text-white text-sm font-bold disabled:opacity-50 shrink-0 transition-opacity"
                   style={{ background: "var(--hb-primary)" }}
                 >
                   등록
                 </button>
               </form>
-              {childId?.startsWith("demo-") && (
-                <p className="text-xs mb-3.5" style={{ color: "var(--hb-muted)" }}>
-                  💡 데모 모드에서는 질문 등록이 되지 않아요
-                </p>
-              )}
 
               {/* 질문 목록 */}
               <div className="flex flex-col gap-3">
@@ -225,7 +204,7 @@ export default function ParentGuidePage() {
                         >
                           {q.status === "대기중" ? "대기 중" : q.status}
                         </span>
-                        {q.status === "대기중" && !childId?.startsWith("demo-") && (
+                        {q.status === "대기중" && (
                           <button
                             onClick={() => stopQuestion(q.id)}
                             className="text-[10px] px-2 py-0.5 rounded-full active:scale-95 transition-transform"
@@ -250,7 +229,6 @@ export default function ParentGuidePage() {
         </p>
       </div>
 
-      <DemoSwitcher mode="parent" />
       <ParentTabBar />
     </div>
   );

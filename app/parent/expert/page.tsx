@@ -3,8 +3,81 @@
 import Link from "next/link";
 import ParentTabBar from "@/components/ParentTabBar";
 import { BackArrow } from "@/components/ParentIcons";
-import { DEMO_EXPERTS } from "@/lib/demo-data";
-import DemoSwitcher from "@/components/DemoSwitcher";
+const EXPERTS = [
+  {
+    id: 1,
+    name: "자살예방상담전화",
+    number: "1393",
+    badge: "긴급",
+    badgeColor: "#EF4444",
+    badgeBg: "#FEF2F2",
+    emoji: "🚨",
+    hours: "24시간",
+  },
+  {
+    id: 2,
+    name: "정신건강위기상담전화",
+    number: "1577-0199",
+    badge: "긴급",
+    badgeColor: "#EF4444",
+    badgeBg: "#FEF2F2",
+    emoji: "🏥",
+    hours: "24시간",
+  },
+  {
+    id: 3,
+    name: "아동학대 신고",
+    number: "112",
+    badge: "긴급",
+    badgeColor: "#EF4444",
+    badgeBg: "#FEF2F2",
+    emoji: "🚔",
+    hours: "24시간",
+  },
+  {
+    id: 4,
+    name: "청소년상담 1388",
+    number: "1388",
+    badge: "주의",
+    badgeColor: "#D97706",
+    badgeBg: "#FFFBEB",
+    emoji: "🧑‍🎓",
+    hours: "24시간",
+  },
+  {
+    id: 5,
+    name: "Wee센터",
+    number: null,
+    badge: "일반",
+    badgeColor: "#6B7280",
+    badgeBg: "#F9FAFB",
+    emoji: "🏫",
+    hours: "평일 09:00–18:00",
+    url: "https://wee.go.kr",
+  },
+  {
+    id: 6,
+    name: "한국아동보호전문기관",
+    number: "1577-1391",
+    badge: "일반",
+    badgeColor: "#6B7280",
+    badgeBg: "#F9FAFB",
+    emoji: "🧒",
+    hours: null,
+    url: "https://korea1391.go.kr",
+  },
+  {
+    id: 7,
+    name: "한국청소년상담복지개발원",
+    number: "051-662-3174",
+    badge: "일반",
+    badgeColor: "#6B7280",
+    badgeBg: "#F9FAFB",
+    emoji: "🏛️",
+    hours: null,
+    url: "https://kyci.or.kr",
+  },
+];
 
 export default function ParentExpertPage() {
   return (
@@ -41,7 +114,7 @@ export default function ParentExpertPage() {
         </div>
 
         {/* 기관 카드 목록 */}
-        {DEMO_EXPERTS.map((expert) => (
+        {EXPERTS.map((expert) => (
           <div
             key={expert.id}
             className="bg-white rounded-2xl p-4"
@@ -93,7 +166,6 @@ export default function ParentExpertPage() {
         </p>
       </div>
 
-      <DemoSwitcher mode="parent" />
       <ParentTabBar />
     </div>
   );

@@ -119,7 +119,7 @@ export default function ChatPage() {
   // ── 실시간 메시지 저장 ──────────────────────────────────────
   const handleTurnComplete = useCallback((turn: Turn) => {
     const sid = sessionIdRef.current;
-    if (!sid || sid.startsWith("demo-")) return;
+    if (!sid) return;
     fetch("/api/chat/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -172,11 +172,6 @@ export default function ChatPage() {
   useEffect(() => {
     if (status !== "ended" || !sessionId) return;
     const t = getTranscript();
-    if (sessionId.startsWith("demo-")) {
-      // 데모 모드: API 없이 완료 처리
-      setReportDone(true);
-      return;
-    }
     fetch("/api/report/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -212,15 +207,6 @@ export default function ChatPage() {
       return;
     }
 
-    if (childId.startsWith("demo-")) {
-      // 데모 모드: Supabase 없이 세션 시작
-      const demoSessionId = `demo-session-${Date.now().toString(36)}`;
-      setSessionId(demoSessionId);
-      sessionIdRef.current = demoSessionId;
-      localStorage.setItem("k_session_id", demoSessionId);
-      await startSession();
-      return;
-    }
 
     const { data } = await supabase
       .from("chat_sessions")
@@ -238,7 +224,7 @@ export default function ChatPage() {
   const handlePause = useCallback(async () => {
     pauseSession();
     const sid = sessionIdRef.current;
-    if (sid && !sid.startsWith("demo-")) {
+    if (sid) {
       const turnCount = getTranscript().filter((t) => t.role === "child").length;
       fetch("/api/chat/pause", {
         method: "POST",

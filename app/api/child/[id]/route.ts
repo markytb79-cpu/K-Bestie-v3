@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { DEMO_CHILD } from "@/lib/demo-data";
+
 
 export const runtime = "nodejs";
 
@@ -10,14 +10,6 @@ export async function GET(
 ) {
   const { id } = await params;
 
-  if (id.startsWith("demo-")) {
-    return NextResponse.json({
-      id: DEMO_CHILD.id,
-      name: DEMO_CHILD.name,
-      grade: DEMO_CHILD.grade,
-      interests: ["운동", "게임"],
-    });
-  }
 
   try {
     const supabase = createServiceClient();
@@ -41,7 +33,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  if (id.startsWith("demo-")) return NextResponse.json({ ok: true, _demo: true });
+
 
   let body: { name?: string; grade?: string; interests?: string[] };
   try {
@@ -78,7 +70,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  if (id.startsWith("demo-")) return NextResponse.json({ ok: true, _demo: true });
+
 
   try {
     const supabase = createServiceClient();
