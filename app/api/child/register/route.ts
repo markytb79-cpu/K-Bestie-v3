@@ -3,44 +3,73 @@ import { createServiceClient, createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
+// POST /api/child/register
+// 부모가 아이 프로필 등록 — 가족이 없으면 기본 가족 자동 생성
 export async function POST(req: NextRequest) {
-  let body: { name: string; grade: string; interests: string[] };
+  let body: { name: string; grade: string; interests: string[]; familyId?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { name, grade, interests } = body;
+  const { name, grade, interests, familyId } = body;
   if (!name?.trim() || !grade || !Array.isArray(interests) || interests.length === 0) {
     return NextResponse.json({ error: "name, grade, interests 필수" }, { status: 400 });
   }
 
-  // 인증된 부모 ID 가져오기
-  let parentId: string | null = null;
-  let parentEmail = "";
-  try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    parentId = user?.id ?? null;
-    parentEmail = user?.email ?? "";
-  } catch {}
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  const supabase = createServiceClient();
+  const svc = createServiceClient();
 
-  // 로그인 부모가 있으면 parents 행 보장 (트리거가 실행 안 된 기존 계정 대응)
-  if (parentId) {
-    const { error: upsertErr } = await supabase
+  // 부모가 없으면 parents 행 보장
+  if (user) {
+    await svc
       .from("parents")
-      .upsert({ id: parentId, email: parentEmail }, { onConflict: "id", ignoreDuplicates: true });
-    if (upsertErr) {
-      return NextResponse.json({ error: "부모 계정 초기화 실패: " + upsertErr.message }, { status: 500 });
+      .upsert({ id: user.id, email: user.email ?? "" }, { onConflict: "id", ignoreDuplicates: true });
+  }
+
+  // 사용할 family_id 결정
+  let resolvedFamilyId = familyId ?? null;
+
+  if (user && !resolvedFamilyId) {
+    // 기존 가족 조회
+    const { data: mem } = await svc
+      .from("family_members")
+      .select("family_id")
+      .eq("user_id", user.id)
+      .in("role", ["owner_parent", "parent"])
+      .order("created_at")
+      .limit(1)
+      .single();
+
+    if (mem) {
+      resolvedFamilyId = mem.family_id;
+    } else {
+      // 가족 없으면 기본 가족 자동 생성
+      const { data: newFamily } = await svc
+        .from("families")
+        .insert({ name: "우리 가족", created_by: user.id })
+        .select("id")
+        .single();
+
+      if (newFamily) {
+        resolvedFamilyId = newFamily.id;
+        await svc
+          .from("family_members")
+          .insert({ family_id: newFamily.id, user_id: user.id, role: "owner_parent" });
+      }
     }
   }
 
-  const { data, error } = await supabase
-    .from("pending_children")
-    .insert({ name: name.trim(), grade, interests, ...(parentId ? { parent_id: parentId } : {}) })
+  if (!resolvedFamilyId) {
+    return NextResponse.json({ error: "가족 정보가 필요합니다" }, { status: 400 });
+  }
+
+  const { data, error } = await svc
+    .from("child_profiles")
+    .insert({ family_id: resolvedFamilyId, name: name.trim(), grade, interests })
     .select("id")
     .single();
 

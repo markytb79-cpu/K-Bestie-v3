@@ -17,6 +17,12 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 법정대리인 동의 및 초대 코드 발급 상태
+  const [consent, setConsent] = useState(false);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [codeExpiresAt, setCodeExpiresAt] = useState<string | null>(null);
+  const [showCodeModal, setShowCodeModal] = useState(false);
+
   function toggleInterest(item: string) {
     setInterests((prev) =>
       prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]
@@ -28,21 +34,55 @@ export default function OnboardingPage() {
     if (!name.trim()) { setError("이름을 입력해주세요."); return; }
     if (!grade) { setError("학년을 선택해주세요."); return; }
     if (interests.length === 0) { setError("관심사를 하나 이상 선택해주세요."); return; }
+    if (!consent) { setError("법정대리인 동의가 필요합니다."); return; }
 
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/child/register", {
+      // 1. 활성 가족 ID 가져오기
+      const { getStore, syncChildrenFromDB } = await import("@/lib/store");
+      let familyId = getStore().activeFamilyId;
+      if (!familyId) {
+        // 백업으로 가족 목록 다시 확인
+        const famsRes = await fetch("/api/families");
+        if (famsRes.ok) {
+          const famData = await famsRes.json();
+          if (famData.families?.length > 0) {
+            familyId = famData.families[0].family_id;
+          }
+        }
+      }
+      if (!familyId) {
+        throw new Error("가족 그룹이 존재하지 않습니다. 먼저 가족을 만들어주세요.");
+      }
+
+      // 2. 가족 아래 아이 프로필 등록
+      const childRes = await fetch(`/api/families/${familyId}/children`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), grade, interests }),
+        body: JSON.stringify({ name: name.trim(), grade, interests, guardian_consent: consent }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "등록 실패");
-      const childId: string = data.childId;
-      localStorage.setItem("k_child_id", childId);
-      registerChild({ id: childId, name: name.trim(), grade, interests });
-      router.replace("/parent/home");
+      const childData = await childRes.json();
+      if (!childRes.ok) throw new Error(childData.error ?? "아이 등록 실패");
+
+      const childId = childData.child.id;
+
+      // 3. 아이 초대 코드 발급
+      const codeRes = await fetch(`/api/children/${childId}/invite-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ guardian_consent: true }),
+      });
+      const codeData = await codeRes.json();
+      if (!codeRes.ok) throw new Error(codeData.error ?? "초대 코드 발급 실패");
+
+      // 동기화
+      await syncChildrenFromDB();
+
+      // 발급 완료 상태 설정
+      setInviteCode(codeData.code);
+      setCodeExpiresAt(codeData.expires_at);
+      setShowCodeModal(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "아이 추가에 실패했어요. 다시 시도해주세요.");
     } finally {
@@ -148,6 +188,21 @@ export default function OnboardingPage() {
             </div>
           </div>
 
+          {/* 법정대리인 동의 */}
+          <div className="flex items-start gap-3 bg-white p-4 rounded-2xl" style={{ boxShadow: "var(--hb-shadow)" }}>
+            <input
+              type="checkbox"
+              id="consent"
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+              className="w-5 h-5 accent-[var(--hb-primary)] rounded cursor-pointer mt-0.5"
+            />
+            <label htmlFor="consent" className="text-xs text-gray-600 leading-relaxed cursor-pointer select-none">
+              <span className="font-bold text-gray-800">[필수] 법정대리인 동의</span>
+              <br />본인은 가입 대상 자녀의 법정대리인으로서 자녀의 개인정보 및 오디오 서비스 사용을 위해 제공하는 것에 동의합니다.
+            </label>
+          </div>
+
           {error && (
             <p className="text-sm text-red-500 bg-red-50 px-4 py-2.5 rounded-xl">{error}</p>
           )}
@@ -162,6 +217,47 @@ export default function OnboardingPage() {
           </button>
         </form>
       </div>
+
+      {/* 초대 코드 완료 모달 */}
+      {showCodeModal && (
+        <>
+          <div className="fixed inset-0 z-[110] bg-black/40" />
+          <div
+            className="fixed bottom-0 left-0 right-0 z-[120] bg-white rounded-t-3xl px-5 pt-6 pb-10 md:max-w-[420px] md:mx-auto md:left-1/2 md:-translate-x-1/2 text-center"
+            style={{ boxShadow: "0 -4px 32px rgba(0,0,0,0.12)" }}
+          >
+            <div className="w-10 h-1 rounded-full bg-gray-200 mx-auto mb-4" />
+            <p className="text-5xl mb-2">🎉</p>
+            <h2 className="text-lg font-bold text-gray-900 mb-1">아이 등록이 완료되었습니다!</h2>
+            <p className="text-xs text-gray-500 mb-6">
+              아래 초대 코드를 자녀의 기기 로그인 화면에 입력하여<br />가족 그룹에 합류시키세요.
+            </p>
+
+            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl py-4 px-6 mb-2">
+              <p className="text-3xl font-bold tracking-widest text-[var(--hb-primary)] font-mono">
+                {inviteCode}
+              </p>
+            </div>
+            
+            {codeExpiresAt && (
+              <p className="text-[10px] text-gray-400 mb-6">
+                만료 일시: {new Date(codeExpiresAt).toLocaleString()} (24시간 동안 유효)
+              </p>
+            )}
+
+            <button
+              onClick={() => {
+                setShowCodeModal(false);
+                router.replace("/parent/home");
+              }}
+              className="w-full py-3.5 rounded-2xl font-bold text-white text-sm"
+              style={{ background: "var(--hb-primary)" }}
+            >
+              확인 (부모 대시보드로 이동)
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

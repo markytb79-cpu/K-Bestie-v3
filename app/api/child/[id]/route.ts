@@ -10,7 +10,6 @@ export async function GET(
 ) {
   const { id } = await params;
 
-  // 데모 ID: 정적 더미 반환
   if (id.startsWith("demo-")) {
     return NextResponse.json({
       id: DEMO_CHILD.id,
@@ -23,7 +22,7 @@ export async function GET(
   try {
     const supabase = createServiceClient();
     const { data, error } = await supabase
-      .from("pending_children")
+      .from("child_profiles")
       .select("id, name, grade, interests")
       .eq("id", id)
       .single();
@@ -42,10 +41,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-
-  if (id.startsWith("demo-")) {
-    return NextResponse.json({ ok: true, _demo: true });
-  }
+  if (id.startsWith("demo-")) return NextResponse.json({ ok: true, _demo: true });
 
   let body: { name?: string; grade?: string; interests?: string[] };
   try {
@@ -66,7 +62,7 @@ export async function PATCH(
   try {
     const supabase = createServiceClient();
     const { error } = await supabase
-      .from("pending_children")
+      .from("child_profiles")
       .update(updateData)
       .eq("id", id);
 
@@ -82,15 +78,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-
-  if (id.startsWith("demo-")) {
-    return NextResponse.json({ ok: true, _demo: true });
-  }
+  if (id.startsWith("demo-")) return NextResponse.json({ ok: true, _demo: true });
 
   try {
     const supabase = createServiceClient();
     const { error } = await supabase
-      .from("pending_children")
+      .from("child_profiles")
       .delete()
       .eq("id", id);
 

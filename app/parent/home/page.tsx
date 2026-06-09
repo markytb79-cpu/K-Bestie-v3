@@ -34,6 +34,16 @@ export default function ParentHomePage() {
   const [reportCount, setReportCount] = useState(0);
   const [reportLoading, setReportLoading] = useState(false);
 
+  // 가족 관리 상태
+  const [famName, setFamName] = useState("");
+  const [creatingFam, setCreatingFam] = useState(false);
+  const [editingFam, setEditingFam] = useState(false);
+  const [newFamName, setNewFamName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteUrl, setInviteUrl] = useState("");
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviting, setInviting] = useState(false);
+
   const activeChild = children[activeIdx] ?? null;
 
   // activeIdx 범위 보정 (아이 삭제 후)
@@ -71,7 +81,43 @@ export default function ParentHomePage() {
   const header = (
     <div className="bg-white px-5 pt-12 pb-4 flex items-center justify-between">
       <div>
-        <p className="text-xs font-medium" style={{ color: "var(--hb-muted)" }}>내친구 케이</p>
+        <div className="flex items-center gap-1.5">
+          {editingFam ? (
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newFamName.trim()) return;
+              try {
+                const res = await fetch(`/api/families/${store.activeFamilyId}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: newFamName.trim() }),
+                });
+                if (res.ok) {
+                  const { syncChildrenFromDB } = await import("@/lib/store");
+                  await syncChildrenFromDB();
+                  setEditingFam(false);
+                }
+              } catch {}
+            }} className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={newFamName}
+                onChange={(e) => setNewFamName(e.target.value)}
+                className="px-2 py-0.5 border border-gray-200 rounded-lg text-xs outline-none bg-gray-50"
+                maxLength={20}
+              />
+              <button type="submit" className="text-xs font-semibold text-blue-600">저장</button>
+              <button type="button" onClick={() => setEditingFam(false)} className="text-xs font-semibold text-gray-500">취소</button>
+            </form>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs font-bold" style={{ color: "var(--hb-primary)" }}>{store.familyName ?? "가족 만들기"}</p>
+              {store.activeFamilyId && (
+                <button onClick={() => { setEditingFam(true); setNewFamName(store.familyName ?? ""); }} className="text-[10px] text-gray-400 hover:text-gray-600 underline">수정</button>
+              )}
+            </div>
+          )}
+        </div>
         <h1 className="text-[17px] font-bold text-gray-900 mt-0.5">안녕하세요, 보호자님 👋</h1>
       </div>
       <Link href="/parent/notifications" className="relative p-2 -mr-1">
@@ -84,6 +130,68 @@ export default function ParentHomePage() {
       </Link>
     </div>
   );
+
+  // 가족 없음 → 빈 상태
+  if (!store.activeFamilyId) {
+    return (
+      <div className="min-h-dvh pb-[72px] lg:pb-10 lg:pl-[240px] w-full" style={{ background: "var(--hb-bg)" }}>
+        <div className="bg-white px-5 pt-12 pb-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium" style={{ color: "var(--hb-muted)" }}>내친구 케이</p>
+            <h1 className="text-[17px] font-bold text-gray-900 mt-0.5">안녕하세요, 보호자님 👋</h1>
+          </div>
+        </div>
+        <div className="max-w-md mx-auto px-5 py-14 flex flex-col items-center text-center gap-6">
+          <p className="text-5xl">🏡</p>
+          <div>
+            <p className="text-base font-bold text-gray-800">아직 가족 그룹이 없어요</p>
+            <p className="text-sm mt-1.5 leading-relaxed" style={{ color: "var(--hb-muted)" }}>
+              가족 그룹을 만들고 아이를 등록해 보세요.
+            </p>
+          </div>
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            if (!famName.trim()) return;
+            setCreatingFam(true);
+            try {
+              const res = await fetch("/api/families", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: famName.trim() }),
+              });
+              if (res.ok) {
+                const { syncChildrenFromDB } = await import("@/lib/store");
+                await syncChildrenFromDB();
+              }
+            } catch (err) {
+              console.error(err);
+            } finally {
+              setCreatingFam(false);
+            }
+          }} className="w-full flex flex-col gap-3">
+            <input
+              type="text"
+              placeholder="예) 서준이네 가족"
+              value={famName}
+              onChange={(e) => setFamName(e.target.value)}
+              className="w-full rounded-2xl px-4 py-3.5 text-sm border border-gray-200 outline-none transition-colors bg-white"
+              style={{ boxShadow: "var(--hb-shadow)" }}
+            />
+            <button
+              type="submit"
+              disabled={creatingFam || !famName.trim()}
+              className="w-full py-3.5 rounded-2xl font-bold text-white text-sm disabled:opacity-50 active:scale-[0.98] transition-transform"
+              style={{ background: "var(--hb-primary)" }}
+            >
+              {creatingFam ? "가족 만드는 중..." : "가족 만들기 →"}
+            </button>
+          </form>
+        </div>
+        <DemoSwitcher mode="parent" />
+        <ParentTabBar />
+      </div>
+    );
+  }
 
   // 아이 없음 → 빈 상태
   if (children.length === 0) {
@@ -263,6 +371,25 @@ export default function ParentHomePage() {
               </div>
             </Link>
 
+            {/* 부모 초대하기 카드 */}
+            <button
+              onClick={() => { setShowInviteModal(true); setInviteUrl(""); setInviteEmail(""); }}
+              className="flex items-center justify-between w-full bg-white rounded-2xl p-5 text-left active:opacity-75 transition-opacity hover:shadow-md duration-200"
+              style={{ boxShadow: "var(--hb-shadow)" }}
+            >
+              <div className="flex items-center gap-3.5">
+                <span className="text-2xl">✉️</span>
+                <div>
+                  <p className="text-sm font-bold text-gray-900">부모 초대하기</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--hb-muted)" }}>다른 보호자를 초대해 함께 돌봐요</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="text-xs font-semibold" style={{ color: "var(--hb-primary)" }}>초대</span>
+                <span style={{ color: "var(--hb-primary)" }}><ChevronRight color="currentColor" /></span>
+              </div>
+            </button>
+
             {/* 전문가와 연결하기 카드 */}
             <Link
               href="/parent/expert"
@@ -285,6 +412,90 @@ export default function ParentHomePage() {
 
         </div>
       </div>
+
+      {/* 부모 초대 모달 */}
+      {showInviteModal && (
+        <>
+          <div className="fixed inset-0 z-[110] bg-black/40" onClick={() => setShowInviteModal(false)} />
+          <div
+            className="fixed bottom-0 left-0 right-0 z-[120] bg-white rounded-t-3xl px-5 pt-5 pb-10 md:max-w-[420px] md:mx-auto md:left-1/2 md:-translate-x-1/2"
+            style={{ boxShadow: "0 -4px 32px rgba(0,0,0,0.12)" }}
+          >
+            <div className="w-10 h-1 rounded-full bg-gray-200 mx-auto mb-4" />
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-bold text-gray-900">보호자 초대하기 ✉️</h2>
+              <button onClick={() => setShowInviteModal(false)} className="text-gray-400 text-xl leading-none">✕</button>
+            </div>
+            
+            {!inviteUrl ? (
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                if (!inviteEmail.trim()) return;
+                setInviting(true);
+                try {
+                  const res = await fetch(`/api/families/${store.activeFamilyId}/invite-parent`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email: inviteEmail.trim() }),
+                  });
+                  if (res.ok) {
+                    const data = await res.json();
+                    setInviteUrl(data.invite_url);
+                  } else {
+                    alert("초대에 실패했습니다. 이메일을 확인해 주세요.");
+                  }
+                } catch {
+                  alert("에러가 발생했습니다. 다시 시도해 주세요.");
+                } finally {
+                  setInviting(false);
+                }
+              }} className="flex flex-col gap-4">
+                <div>
+                  <label className="block text-xs font-bold mb-1.5 text-gray-700">초대할 보호자 이메일</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="example@email.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    className="w-full px-4 py-3 rounded-2xl bg-gray-50 text-sm outline-none border-2 border-transparent transition-colors"
+                    onFocus={(e) => (e.target.style.borderColor = "var(--hb-primary)")}
+                    onBlur={(e) => (e.target.style.borderColor = "transparent")}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={inviting || !inviteEmail.trim()}
+                  className="w-full py-3.5 rounded-2xl font-bold text-white transition-opacity disabled:opacity-40"
+                  style={{ background: "var(--hb-primary)" }}
+                >
+                  {inviting ? "링크 생성 중..." : "초대 링크 생성 →"}
+                </button>
+              </form>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-center">
+                  <p className="text-sm font-semibold text-green-800">초대 링크가 생성되었습니다!</p>
+                  <p className="text-xs text-green-600 mt-1">아래 링크를 복사하여 상대 보호자에게 전달하세요.</p>
+                </div>
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs break-all font-mono">
+                  {inviteUrl}
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(inviteUrl);
+                    alert("초대 링크가 복사되었습니다!");
+                  }}
+                  className="w-full py-3.5 rounded-2xl font-bold text-white"
+                  style={{ background: "var(--hb-primary)" }}
+                >
+                  초대 링크 복사
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       <DemoSwitcher mode="parent" />
       <ParentTabBar />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -12,6 +12,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [returnUrl, setReturnUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const url = params.get("returnUrl");
+      if (url) {
+        setReturnUrl(url);
+      }
+    }
+  }, []);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -37,7 +48,11 @@ export default function LoginPage() {
     // 로그인 성공 후 DB children → store 동기화 (k_child_id 포함)
     await syncChildrenFromDB();
 
-    router.push("/parent/home");
+    if (returnUrl) {
+      router.push(returnUrl);
+    } else {
+      router.push("/parent/home");
+    }
     router.refresh();
   }
 

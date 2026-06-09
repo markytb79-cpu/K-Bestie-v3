@@ -49,6 +49,8 @@ export interface StoreNotif {
 }
 
 export interface StoreData {
+  activeFamilyId: string | null;
+  familyName: string | null;
   activeChildId: string | null;
   children: StoreChild[];
   questions: StoreQuestion[];
@@ -69,6 +71,8 @@ export const DEFAULT_MISSIONS: StoreMission[] = [
 ];
 
 const DEFAULT_STORE: StoreData = {
+  activeFamilyId: null,
+  familyName: null,
   activeChildId: null,
   children: [],
   questions: [],
@@ -110,6 +114,7 @@ export function clearStore(): void {
   localStorage.removeItem(STORE_KEY);
   localStorage.removeItem("k_child_id");
   localStorage.removeItem("k_session_id");
+  localStorage.removeItem("k_family_id");
   window.dispatchEvent(new Event(STORE_EVENT));
 }
 
@@ -119,13 +124,62 @@ export function clearStore(): void {
 export async function syncChildrenFromDB(): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    const res = await fetch("/api/parent/children");
-    if (!res.ok) return;
-    const { children } = (await res.json()) as { children: StoreChild[] };
-    if (!Array.isArray(children) || children.length === 0) return;
+    // 1. 내 가족 목록 조회
+    const famsRes = await fetch("/api/families");
+    if (!famsRes.ok) return;
+    const { families } = (await famsRes.json()) as {
+      families: Array<{
+        family_id: string;
+        role: string;
+        families: { id: string; name: string; created_at: string };
+      }>;
+    };
+
+    if (!Array.isArray(families) || families.length === 0) {
+      // 가족이 없으면 스토어를 빈 상태로 초기화
+      setStore({
+        activeFamilyId: null,
+        familyName: null,
+        children: [],
+        activeChildId: null,
+      });
+      localStorage.removeItem("k_family_id");
+      localStorage.removeItem("k_child_id");
+      return;
+    }
+
+    // 우선 첫 번째 가족을 활성 가족으로 선택
+    const activeFamily = families[0];
+    const familyId = activeFamily.family_id;
+    const familyName = activeFamily.families?.name ?? "";
+
+    // 2. 가족 상세 정보 조회 (아이 프로필 목록 포함)
+    const famDetailRes = await fetch(`/api/families/${familyId}`);
+    if (!famDetailRes.ok) return;
+    const { family } = (await famDetailRes.json()) as {
+      family: {
+        id: string;
+        name: string;
+        child_profiles: Array<{
+          id: string;
+          name: string;
+          grade: string;
+          interests: string[];
+          created_at: string;
+        }>;
+      };
+    };
+
+    const children: StoreChild[] = (family.child_profiles ?? []).map((cp) => ({
+      id: cp.id,
+      name: cp.name,
+      grade: cp.grade,
+      interests: cp.interests,
+    }));
+
     const store = getStore();
 
-    // 실제 아이가 있으면 demo-* 항목 제거, activeChildId 결정
+    // activeChildId 결정
     const currentActive = store.activeChildId;
     const activeChildId =
       currentActive &&
@@ -134,21 +188,22 @@ export async function syncChildrenFromDB(): Promise<void> {
         ? currentActive
         : children[0]?.id ?? null;
 
-    // demo→real 전환 감지: k_child_id가 demo-* 이거나 미설정이면 전환
+    // demo→real 전환 감지
     const currentChildId = localStorage.getItem("k_child_id");
     const isTransitioningFromDemo =
       !currentChildId || currentChildId.startsWith("demo-");
 
     setStore({
+      activeFamilyId: familyId,
+      familyName: familyName,
       children,
       activeChildId,
-      // demo 세션 진행도 초기화
       ...(isTransitioningFromDemo
         ? { missions: DEFAULT_MISSIONS, moodScore: null }
         : {}),
     });
 
-    // k_child_id를 실제 아이 ID로 업데이트
+    localStorage.setItem("k_family_id", familyId);
     if (activeChildId && isTransitioningFromDemo) {
       localStorage.setItem("k_child_id", activeChildId);
     }
