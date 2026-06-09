@@ -31,7 +31,6 @@ export default function OnboardingPage() {
 
     setLoading(true);
     setError(null);
-    let childId: string;
     try {
       const res = await fetch("/api/child/register", {
         method: "POST",
@@ -40,15 +39,15 @@ export default function OnboardingPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "등록 실패");
-      childId = data.childId;
-    } catch {
-      // API 실패 시 로컬 데모 ID로 fallback (데모 환경)
-      childId = `demo-local-${Date.now().toString(36)}`;
+      const childId: string = data.childId;
+      localStorage.setItem("k_child_id", childId);
+      registerChild({ id: childId, name: name.trim(), grade, interests });
+      router.replace("/parent/home");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "아이 추가에 실패했어요. 다시 시도해주세요.");
+    } finally {
+      setLoading(false);
     }
-    localStorage.setItem("k_child_id", childId);
-    registerChild({ id: childId, name: name.trim(), grade, interests });
-    router.replace("/parent/home");
-    setLoading(false);
   }
 
   return (

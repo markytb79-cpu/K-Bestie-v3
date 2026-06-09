@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DEMO_CHILD } from "@/lib/demo-data";
-import { clearStore, registerChild } from "@/lib/store";
+import { clearStore, registerChild, getStore } from "@/lib/store";
 
 type Mode = "parent" | "child";
 
@@ -35,10 +35,23 @@ export default function DemoSwitcher({ mode }: { mode: Mode }) {
 
   const switchToOther = () => {
     if (mode === "parent") {
-      if (!localStorage.getItem("k_child_id")) {
-        localStorage.setItem("k_child_id", DEMO_CHILD.id);
+      const store = getStore();
+      const realChildren = store.children.filter((c) => !c.id.startsWith("demo-"));
+
+      if (realChildren.length > 0) {
+        // 실제 아이가 있으면 activeChildId 또는 첫 번째 실제 아이 사용
+        const targetId =
+          store.activeChildId && !store.activeChildId.startsWith("demo-")
+            ? store.activeChildId
+            : realChildren[0].id;
+        localStorage.setItem("k_child_id", targetId);
+      } else {
+        // 실제 아이 없음 → 데모 폴백
+        if (!localStorage.getItem("k_child_id")) {
+          localStorage.setItem("k_child_id", DEMO_CHILD.id);
+        }
+        registerChild({ id: DEMO_CHILD.id, name: DEMO_CHILD.name, grade: DEMO_CHILD.grade, interests: [] });
       }
-      registerChild({ id: DEMO_CHILD.id, name: DEMO_CHILD.name, grade: DEMO_CHILD.grade, interests: [] });
       router.push("/child/home");
     } else {
       router.push("/parent/home");

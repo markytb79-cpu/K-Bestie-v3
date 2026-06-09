@@ -40,10 +40,11 @@ export default function ChildTabBar() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50"
+      className="fixed bottom-0 left-0 right-0 z-50 max-w-[480px] mx-auto border-l border-r"
       style={{
         background: "#FFFDF5",
-        borderTop: "1px solid rgba(26,107,90,0.12)",
+        borderColor: "rgba(26,107,90,0.12)",
+        borderTopWidth: "1px",
         height: "64px",
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
       }}

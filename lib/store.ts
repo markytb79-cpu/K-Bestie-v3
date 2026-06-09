@@ -124,12 +124,32 @@ export async function syncChildrenFromDB(): Promise<void> {
     const { children } = (await res.json()) as { children: StoreChild[] };
     if (!Array.isArray(children) || children.length === 0) return;
     const store = getStore();
-    // demo-* 로컬 항목은 유지, DB UUID 항목으로 교체
-    const demoChildren = store.children.filter((c) => c.id.startsWith("demo-"));
-    const merged = [...children, ...demoChildren];
-    const activeChildId = store.activeChildId ?? children[0]?.id ?? null;
-    setStore({ children: merged, activeChildId });
-    if (activeChildId && !localStorage.getItem("k_child_id")) {
+
+    // 실제 아이가 있으면 demo-* 항목 제거, activeChildId 결정
+    const currentActive = store.activeChildId;
+    const activeChildId =
+      currentActive &&
+      !currentActive.startsWith("demo-") &&
+      children.find((c) => c.id === currentActive)
+        ? currentActive
+        : children[0]?.id ?? null;
+
+    // demo→real 전환 감지: k_child_id가 demo-* 이거나 미설정이면 전환
+    const currentChildId = localStorage.getItem("k_child_id");
+    const isTransitioningFromDemo =
+      !currentChildId || currentChildId.startsWith("demo-");
+
+    setStore({
+      children,
+      activeChildId,
+      // demo 세션 진행도 초기화
+      ...(isTransitioningFromDemo
+        ? { missions: DEFAULT_MISSIONS, moodScore: null }
+        : {}),
+    });
+
+    // k_child_id를 실제 아이 ID로 업데이트
+    if (activeChildId && isTransitioningFromDemo) {
       localStorage.setItem("k_child_id", activeChildId);
     }
   } catch {}

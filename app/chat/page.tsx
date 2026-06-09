@@ -384,112 +384,105 @@ export default function ChatPage() {
     >
       {Header}
 
-      {/* 자막 존 — 캐릭터 + 케이 현재 발화 */}
-      <div
-        className="shrink-0 flex flex-col items-center justify-end px-6 pb-4"
-        style={{ height: 188 }}
-      >
-        <div className="relative mb-3">
-          {isActive && (
-            <span
-              className="absolute inset-0 rounded-full animate-ping opacity-25"
-              style={{ background: "var(--color-accent)" }}
-            />
-          )}
-          <Image
-            src="/character_logo.png"
-            alt="케이"
-            width={68} height={68}
-            className="relative object-contain"
-            style={{
-              filter: isLive
-                ? "drop-shadow(0 0 12px var(--color-accent))"
-                : isConnecting ? "brightness(0.85)" : "none",
-            }}
-            priority
-          />
-        </div>
+      <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
+        {/* 왼쪽 컨트롤 영역 */}
+        <div className="flex flex-col items-center justify-between p-6 shrink-0 md:w-[320px] md:border-r border-[#1A6B5A]/10 bg-white/40">
+          <div className="flex flex-col items-center justify-center flex-1 w-full pb-4">
+            <div className="relative mb-4 shrink-0">
+              {isActive && (
+                <span
+                  className="absolute inset-0 rounded-full animate-ping opacity-25"
+                  style={{ background: "var(--color-accent)" }}
+                />
+              )}
+              <Image
+                src="/character_logo.png"
+                alt="케이"
+                width={76} height={76}
+                className="relative object-contain"
+                style={{
+                  filter: isLive
+                    ? "drop-shadow(0 0 12px var(--color-accent))"
+                    : isConnecting ? "brightness(0.85)" : "none",
+                }}
+                priority
+              />
+            </div>
 
-        {/* 타이핑 애니메이션 OR 자막 텍스트 */}
-        {isLive && !latestK ? (
-          <div className="k-typing">
-            <span /><span /><span />
-          </div>
-        ) : (
-          <p
-            className="text-center font-bold leading-snug"
-            style={{
-              fontSize: isLive && latestK ? "1.15rem" : "0.875rem",
-              color: isLive && latestK
-                ? "var(--color-primary)"
-                : "var(--color-text-muted)",
-              minHeight: "3.6em",
-              display: "-webkit-box",
-              WebkitLineClamp: 3,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-            }}
-          >
-            {captionText}
-          </p>
-        )}
-      </div>
-
-      {/* 대화 히스토리 */}
-      <div
-        ref={voiceBubbleRef}
-        className="flex-1 overflow-y-auto px-4 py-2 flex flex-col gap-2"
-        style={{ borderTop: "1px solid rgba(0,0,0,0.06)" }}
-      >
-        {transcript.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-xs text-center" style={{ color: "var(--color-text-muted)" }}>
-              {isIdle ? "마이크를 눌러 대화를 시작해봐!" : "곧 대화 내역이 여기에 표시돼요"}
-            </p>
-          </div>
-        ) : (
-          transcript.map((turn, i) => (
-            <BubbleItem key={i} turn={turn} showSpeaker={false} />
-          ))
-        )}
-        {EndedNotice}
-      </div>
-
-      {/* 마이크 컨트롤 */}
-      <div
-        className="shrink-0 pt-3 flex items-center justify-center"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 32px)" }}
-      >
-        <div className="w-12 mr-6 shrink-0" />
-        <div className="flex flex-col items-center gap-2.5">
-          <button
-            onClick={isLive ? handlePause : (isIdle || isPaused) ? handleStart : undefined}
-            disabled={micDisabled}
-            aria-label={isLive ? "대화 일시정지" : isPaused ? "대화 재개" : "대화 시작"}
-            className="relative w-[76px] h-[76px] rounded-full flex items-center justify-center transition-transform active:scale-95 disabled:opacity-40"
-            style={{
-              background: isLive ? "var(--color-primary)" : "var(--color-accent)",
-              boxShadow: isActive
-                ? "0 0 0 10px rgba(218,119,73,0.18), 0 4px 20px rgba(218,119,73,0.4)"
-                : "0 4px 20px rgba(218,119,73,0.35)",
-            }}
-          >
-            {isActive && (
-              <span className="absolute inset-0 rounded-full animate-ping opacity-20"
-                style={{ background: "var(--color-accent)" }} />
+            {/* 타이핑 애니메이션 OR 자막 텍스트 */}
+            {isLive && !latestK ? (
+              <div className="k-typing">
+                <span /><span /><span />
+              </div>
+            ) : (
+              <p
+                className="text-center font-bold leading-snug px-2 text-gray-800"
+                style={{
+                  fontSize: isLive && latestK ? "1.1rem" : "0.875rem",
+                  color: isLive && latestK
+                    ? "var(--color-primary)"
+                    : "var(--color-text-muted)",
+                  minHeight: "3.6em",
+                  display: "-webkit-box",
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                }}
+              >
+                {captionText}
+              </p>
             )}
-            {isLive ? <IconStop /> : <IconMic />}
-          </button>
-          <p className="text-xs font-semibold" style={{ color: "var(--color-primary)" }}>
-            {isIdle && "마이크를 눌러서 말해봐!"}
-            {isConnecting && "연결하는 중..."}
-            {isLive && "탭해서 일시정지"}
-            {isPaused && "눌러서 계속 말해봐!"}
-            {(isEnded || isError) && " "}
-          </p>
+          </div>
+
+          {/* 마이크 컨트롤 */}
+          <div className="flex flex-col items-center gap-2.5 w-full pb-2 md:pb-4 shrink-0">
+            <button
+              onClick={isLive ? handlePause : (isIdle || isPaused) ? handleStart : undefined}
+              disabled={micDisabled}
+              aria-label={isLive ? "대화 일시정지" : isPaused ? "대화 재개" : "대화 시작"}
+              className="relative w-[76px] h-[76px] rounded-full flex items-center justify-center transition-transform active:scale-95 disabled:opacity-40"
+              style={{
+                background: isLive ? "var(--color-primary)" : "var(--color-accent)",
+                boxShadow: isActive
+                  ? "0 0 0 10px rgba(218,119,73,0.18), 0 4px 20px rgba(218,119,73,0.4)"
+                  : "0 4px 20px rgba(218,119,73,0.35)",
+              }}
+            >
+              {isActive && (
+                <span className="absolute inset-0 rounded-full animate-ping opacity-20"
+                  style={{ background: "var(--color-accent)" }} />
+              )}
+              {isLive ? <IconStop /> : <IconMic />}
+            </button>
+            <p className="text-xs font-semibold text-center mt-1" style={{ color: "var(--color-primary)" }}>
+              {isIdle && "마이크를 눌러서 말해봐!"}
+              {isConnecting && "연결하는 중..."}
+              {isLive && "탭해서 일시정지"}
+              {isPaused && "눌러서 계속 말해봐!"}
+              {(isEnded || isError) && " "}
+            </p>
+            <div className="mt-2.5">{ModeToggleFAB}</div>
+          </div>
         </div>
-        <div className="ml-6 shrink-0 self-center">
-          {ModeToggleFAB}
+
+        {/* 오른쪽 말풍선 영역 */}
+        <div
+          ref={voiceBubbleRef}
+          className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2 bg-white/20"
+          style={{ borderTop: "1px solid rgba(0,0,0,0.04)" }}
+        >
+          {transcript.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-center">
+              <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                {isIdle ? "마이크를 눌러 대화를 시작해봐!" : "곧 대화 내역이 여기에 표시돼요"}
+              </p>
+            </div>
+          ) : (
+            transcript.map((turn, i) => (
+              <BubbleItem key={i} turn={turn} showSpeaker={false} />
+            ))
+          )}
+          {EndedNotice}
         </div>
       </div>
     </div>
@@ -505,63 +498,66 @@ export default function ChatPage() {
 
       <div
         ref={textBubbleRef}
-        className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3"
+        className="flex-1 overflow-y-auto px-4 py-4 flex flex-col"
       >
-        {transcript.length === 0 && !isConnecting && (
-          <div className="flex flex-col items-center justify-center h-full gap-3 pb-10">
-            <Image src="/character_logo.png" alt="" width={80} height={80} className="object-contain opacity-60" />
-            <p className="text-sm font-medium" style={{ color: "var(--color-text-muted)" }}>
-              아래에 메시지를 입력하면 케이가 답해줄 거야!
-            </p>
-          </div>
-        )}
-
-        {isConnecting && transcript.length === 0 && (
-          <div className="flex justify-start">
-            <div className="rounded-2xl px-4 py-3"
-              style={{ background: "var(--color-primary)", maxWidth: "72%" }}>
-              <p className="text-sm text-white">잠깐만 기다려 줘 🌟</p>
+        <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col gap-3 justify-start">
+          {transcript.length === 0 && !isConnecting && (
+            <div className="flex flex-col items-center justify-center h-full gap-3 pb-10">
+              <Image src="/character_logo.png" alt="" width={80} height={80} className="object-contain opacity-60" />
+              <p className="text-sm font-medium" style={{ color: "var(--color-text-muted)" }}>
+                아래에 메시지를 입력하면 케이가 답해줄 거야!
+              </p>
             </div>
-          </div>
-        )}
+          )}
 
-        {transcript.map((turn, i) => (
-          <BubbleItem key={i} turn={turn} showSpeaker={turn.role === "k"} />
-        ))}
-        {EndedNotice}
+          {isConnecting && transcript.length === 0 && (
+            <div className="flex justify-start">
+              <div className="rounded-2xl px-4 py-3"
+                style={{ background: "var(--color-primary)", maxWidth: "72%" }}>
+                <p className="text-sm text-white">잠깐만 기다려 줘 🌟</p>
+              </div>
+            </div>
+          )}
+
+          {transcript.map((turn, i) => (
+            <BubbleItem key={i} turn={turn} showSpeaker={turn.role === "k"} />
+          ))}
+          {EndedNotice}
+        </div>
       </div>
 
       {/* 입력창 */}
       <div
-        className="shrink-0 px-4 pt-3 flex gap-2 items-center border-t"
+        className="shrink-0 border-t bg-gray-50/50"
         style={{
-          background: "var(--color-parent-bg)",
           borderColor: "rgba(0,0,0,0.07)",
           paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
         }}
       >
-        <div className="shrink-0">{ModeToggleFAB}</div>
-        <input
-          value={textInput}
-          onChange={(e) => setTextInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); }
-          }}
-          placeholder="케이에게 말해봐..."
-          disabled={textDisabled}
-          className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border-2 border-transparent disabled:opacity-40"
-          style={{ background: "white", fontFamily: "var(--font-base)" }}
-          maxLength={200}
-        />
-        <button
-          onClick={handleSendText}
-          disabled={textDisabled || !textInput.trim()}
-          className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 disabled:opacity-30 active:scale-95"
-          style={{ background: "var(--color-primary)", color: "white" }}
-          aria-label="전송"
-        >
-          <IconSend />
-        </button>
+        <div className="max-w-3xl mx-auto px-4 pt-3 flex gap-2 items-center w-full">
+          <div className="shrink-0">{ModeToggleFAB}</div>
+          <input
+            value={textInput}
+            onChange={(e) => setTextInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); }
+            }}
+            placeholder="케이에게 말해봐..."
+            disabled={textDisabled}
+            className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border-2 border-transparent disabled:opacity-40"
+            style={{ background: "white", fontFamily: "var(--font-base)", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}
+            maxLength={200}
+          />
+          <button
+            onClick={handleSendText}
+            disabled={textDisabled || !textInput.trim()}
+            className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 disabled:opacity-30 active:scale-95 transition-transform"
+            style={{ background: "var(--color-primary)", color: "white" }}
+            aria-label="전송"
+          >
+            <IconSend />
+          </button>
+        </div>
       </div>
     </div>
   );

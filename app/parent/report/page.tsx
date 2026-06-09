@@ -75,7 +75,7 @@ export default function ParentReportPage() {
 
   return (
     <div
-      className="min-h-dvh pb-[72px] md:max-w-[420px] md:mx-auto"
+      className="min-h-dvh pb-[72px] lg:pb-12 lg:pl-[240px] w-full transition-all"
       style={{ background: "var(--hb-bg)" }}
     >
       {/* 헤더 */}
@@ -99,9 +99,9 @@ export default function ParentReportPage() {
         </span>
       </div>
 
-      <div className="px-4 py-4 flex flex-col gap-3">
+      <div className="max-w-6xl mx-auto px-4 py-4">
         {reports.length === 0 ? (
-          <div className="text-center py-16">
+          <div className="text-center py-16 bg-white rounded-2xl" style={{ boxShadow: "var(--hb-shadow)" }}>
             <p className="text-4xl mb-4">📭</p>
             <p className="text-sm font-semibold text-gray-600">아직 대화 기록이 없어요</p>
             <p className="text-xs mt-2" style={{ color: "var(--hb-muted)" }}>
@@ -116,54 +116,56 @@ export default function ParentReportPage() {
             </Link>
           </div>
         ) : (
-          reports.map((r) => (
-            <Link
-              key={r.id}
-              href={`/parent/report/${r.id}`}
-              className="block bg-white rounded-2xl p-4 active:opacity-80 transition-opacity"
-              style={{ boxShadow: "var(--hb-shadow)" }}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <p className="text-xs font-medium" style={{ color: "var(--hb-muted)" }}>
-                    {formatDate(r.created_at)}
-                  </p>
-                  <p className="text-[11px] mt-0.5" style={{ color: "var(--hb-muted)" }}>
-                    {formatRelative(r.created_at)}
-                    {r.session?.turn_count ? ` · 대화 ${r.session.turn_count}회` : ""}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">{moodEmoji(r.mood_score)}</span>
-                  <div
-                    className="flex items-baseline gap-0.5 px-2.5 py-1 rounded-full shrink-0"
-                    style={{ background: "#DCFCE7" }}
-                  >
-                    <span className="text-sm font-bold" style={{ color: "#15803D" }}>
-                      {r.mood_score}
-                    </span>
-                    <span className="text-[10px]" style={{ color: "#4ADE80" }}>/10</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {reports.map((r) => (
+              <Link
+                key={r.id}
+                href={`/parent/report/${r.id}`}
+                className="block bg-white rounded-2xl p-4 active:opacity-80 transition-all hover:shadow-md duration-200"
+                style={{ boxShadow: "var(--hb-shadow)" }}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <p className="text-xs font-medium" style={{ color: "var(--hb-muted)" }}>
+                      {formatDate(r.created_at)}
+                    </p>
+                    <p className="text-[11px] mt-0.5" style={{ color: "var(--hb-muted)" }}>
+                      {formatRelative(r.created_at)}
+                      {r.session?.turn_count ? ` · 대화 ${r.session.turn_count}회` : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">{moodEmoji(r.mood_score)}</span>
+                    <div
+                      className="flex items-baseline gap-0.5 px-2.5 py-1 rounded-full shrink-0"
+                      style={{ background: "#DCFCE7" }}
+                    >
+                      <span className="text-sm font-bold" style={{ color: "#15803D" }}>
+                        {r.mood_score}
+                      </span>
+                      <span className="text-[10px]" style={{ color: "#4ADE80" }}>/10</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <p className="text-sm font-semibold text-gray-800 leading-snug mb-2.5">
-                {r.summary_line}
-              </p>
+                <p className="text-sm font-semibold text-gray-800 leading-snug mb-2.5">
+                  {r.summary_line}
+                </p>
 
-              <div className="flex gap-1.5 flex-wrap">
-                {r.emotion_tags.slice(0, 4).map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-2.5 py-0.5 rounded-full text-xs font-medium"
-                    style={{ background: "var(--hb-primary-light)", color: "var(--hb-primary)" }}
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </Link>
-          ))
+                <div className="flex gap-1.5 flex-wrap">
+                  {r.emotion_tags.slice(0, 4).map((tag) => (
+                    <span
+                      key={tag}
+                      className="px-2.5 py-0.5 rounded-full text-xs font-medium"
+                      style={{ background: "var(--hb-primary-light)", color: "var(--hb-primary)" }}
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </Link>
+            ))}
+          </div>
         )}
       </div>
 

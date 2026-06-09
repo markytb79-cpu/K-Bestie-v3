@@ -9,7 +9,7 @@ import DemoSwitcher from "@/components/DemoSwitcher";
 export default function ParentExpertPage() {
   return (
     <div
-      className="min-h-dvh pb-[72px] md:max-w-[420px] md:mx-auto"
+      className="min-h-dvh pb-[72px] lg:pb-12 lg:pl-[240px] w-full transition-all"
       style={{ background: "var(--hb-bg)" }}
     >
       {/* 헤더 */}
@@ -25,7 +25,7 @@ export default function ParentExpertPage() {
         </div>
       </div>
 
-      <div className="px-4 py-4 flex flex-col gap-3">
+      <div className="max-w-4xl mx-auto px-4 py-4 flex flex-col gap-3">
         {/* 안내 배너 */}
         <div
           className="rounded-2xl p-4"
