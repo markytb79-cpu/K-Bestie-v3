@@ -65,6 +65,16 @@ export async function POST(
     .single();
   if (existing) return NextResponse.json({ error: "이미 가족 구성원입니다" }, { status: 409 });
 
+  // 보호자 최대 2명 제한 확인
+  const { count: parentCount } = await svc
+    .from("family_members")
+    .select("*", { count: "exact", head: true })
+    .eq("family_id", inv.family_id)
+    .in("role", ["owner_parent", "parent"]);
+  if ((parentCount ?? 0) >= 2) {
+    return NextResponse.json({ error: "이 가족에는 이미 보호자가 2명 등록되어 있습니다" }, { status: 403 });
+  }
+
   // 가족 구성원 추가
   const { error: memErr } = await svc
     .from("family_members")

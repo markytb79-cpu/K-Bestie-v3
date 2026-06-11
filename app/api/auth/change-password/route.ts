@@ -1,0 +1,89 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+
+export const runtime = "nodejs";
+
+// GET /api/auth/change-password
+// 현재 로그인 유저의 must_change_password 상태 + username 반환
+// 첫 로그인 직후 프론트에서 호출하여 비밀번호 변경 안내 여부 결정
+export async function GET(_req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const svc = createServiceClient();
+  const { data: account } = await svc
+    .from("member_accounts")
+    .select("username, must_change_password, role, family_id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (!account) {
+    // 소셜 계정 (오너) — must_change_password 해당 없음
+    return NextResponse.json({ is_member_account: false, must_change_password: false });
+  }
+
+  return NextResponse.json({
+    is_member_account: true,
+    must_change_password: account.must_change_password,
+    username: account.username,
+    role: account.role,
+    family_id: account.family_id,
+  });
+}
+
+// POST /api/auth/change-password
+// 구성원이 자신의 비밀번호를 변경하고 must_change_password 플래그를 해제
+// Body: { new_password?: string, skip?: boolean }
+//   new_password: 새 비밀번호 (6자 이상) — skip=false일 때 필수
+//   skip: true이면 비밀번호 유지, 플래그만 해제 (나중에 변경 선택)
+// Returns: { ok: true }
+export async function POST(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  let body: { new_password?: string; skip?: boolean };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const { new_password, skip } = body;
+  const svc = createServiceClient();
+
+  // ── member_accounts 계정인지 확인 ────────────────────────────────
+  const { data: account } = await svc
+    .from("member_accounts")
+    .select("id")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (!account) {
+    return NextResponse.json(
+      { error: "소셜 계정은 이 API를 사용할 수 없습니다" },
+      { status: 400 }
+    );
+  }
+
+  // ── 비밀번호 변경 (skip이 아닌 경우) ─────────────────────────────
+  if (!skip) {
+    if (!new_password || new_password.length < 6) {
+      return NextResponse.json({ error: "비밀번호는 6자 이상이어야 합니다" }, { status: 400 });
+    }
+    const { error: authError } = await svc.auth.admin.updateUserById(user.id, {
+      password: new_password,
+    });
+    if (authError) {
+      return NextResponse.json({ error: `비밀번호 변경 실패: ${authError.message}` }, { status: 500 });
+    }
+  }
+
+  // ── must_change_password 플래그 해제 ─────────────────────────────
+  await svc
+    .from("member_accounts")
+    .update({ must_change_password: false })
+    .eq("id", user.id);
+
+  return NextResponse.json({ ok: true });
+}
