@@ -1,21 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-
-interface FamilyItem {
-  family_id: string;
-  role: string;
-  families: { id: string; name: string };
-}
 
 export default function HubPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [hasSession, setHasSession] = useState(false);
-  const [families, setFamilies] = useState<FamilyItem[]>([]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -25,29 +16,79 @@ export default function HubPage() {
         router.replace("/login");
         return;
       }
-      setHasSession(true);
 
-      // 가족 목록 조회
       try {
-        const res = await fetch("/api/families");
-        if (res.ok) {
-          const data = await res.json();
-          const list = (data.families ?? []) as FamilyItem[];
-          setFamilies(list);
+        // 1. 첫 로그인 비밀번호 설정 플래그 및 계정 역할 조회
+        const pwCheckRes = await fetch("/api/auth/change-password", {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        });
 
-          if (list.length > 0) {
-            // 이미 가족이 있는 경우 role에 따라 자동 이동
-            const myRole = list[0].role;
-            if (myRole === "child") {
+        if (!pwCheckRes.ok) {
+          throw new Error("Password change check failed");
+        }
+
+        const pwData = await pwCheckRes.json();
+
+        // 2. 만약 비밀번호를 반드시 변경해야 하는 경우 (구성원 첫 로그인)
+        if (pwData.must_change_password) {
+          router.replace("/auth/setup-password");
+          return;
+        }
+
+        // 3. 구성원 계정인 경우 즉시 역할별 대시보드로 이동
+        if (pwData.is_member_account) {
+          if (pwData.role === "child") {
+            // 자녀의 프로필 ID 로딩을 위해 child/me 재조회 후 저장
+            const childMeRes = await fetch("/api/child/me");
+            if (childMeRes.ok) {
+              const childInfo = await childMeRes.json();
+              if (childInfo?.id) {
+                localStorage.setItem("k_child_id", childInfo.id);
+              }
+            }
+            router.replace("/child/home");
+          } else {
+            router.replace("/parent/home");
+          }
+          return;
+        }
+
+        // 4. 소셜 로그인(오너) 계정인 경우 기존의 auto-join 호출
+        const joinRes = await fetch("/api/auth/auto-join", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        if (joinRes.ok) {
+          const joinData = await joinRes.json();
+          if (joinData.joined) {
+            if (joinData.role === "child") {
+              if (joinData.child_profile_id) {
+                localStorage.setItem("k_child_id", joinData.child_profile_id);
+              }
               router.replace("/child/home");
             } else {
               router.replace("/parent/home");
             }
             return;
+          } else {
+            if (joinData.reason === "no_email") {
+              alert(joinData.message || "이메일 정보가 없어 로그인이 어렵습니다.");
+              await supabase.auth.signOut();
+              router.replace("/login");
+              return;
+            }
+            // 그 외 예약 데이터 매칭 실패 시 parent/home으로 보내서 가족 그룹을 생성케 함
+            router.replace("/parent/home");
+            return;
           }
+        } else {
+          router.replace("/parent/home");
         }
       } catch (err) {
-        console.error(err);
+        console.error("Hub page initialization error:", err);
+        router.replace("/parent/home");
       } finally {
         setLoading(false);
       }
@@ -63,48 +104,8 @@ export default function HubPage() {
     );
   }
 
-  // 로그인되었으나 가족이 전혀 없는 경우 역할 선택 유도
-  return (
-    <div
-      className="min-h-dvh flex flex-col items-center justify-center px-5 py-8 w-full transition-all"
-      style={{ background: "linear-gradient(160deg, #EEF2FF 0%, #F0FDF4 100%)" }}
-    >
-      <div className="max-w-md w-full flex flex-col items-center justify-center text-center">
-        <p className="text-6xl mb-4">🌿</p>
-        <h1 className="text-2xl font-bold text-gray-900">내친구 케이</h1>
-        <p className="text-sm mt-2 text-gray-500 max-w-xs leading-relaxed">
-          환영합니다! 아직 연결된 가족이 없습니다.<br />시작할 역할을 선택해주세요.
-        </p>
-
-        <div className="w-full flex flex-col gap-3 mt-8">
-          <button
-            onClick={() => router.push("/parent/home")}
-            className="flex items-center gap-4 bg-white rounded-2xl p-5 w-full text-left active:scale-[0.98] transition-transform hover:shadow-md border border-gray-100"
-            style={{ boxShadow: "var(--hb-shadow)" }}
-          >
-            <span className="text-3xl shrink-0">👨‍👩‍👧</span>
-            <div className="flex-1">
-              <p className="font-bold text-gray-900">부모용으로 시작하기</p>
-              <p className="text-xs text-gray-400 mt-0.5">가족 그룹 생성 · 리포트 확인 · 초대하기</p>
-            </div>
-            <span className="text-gray-300 text-lg">›</span>
-          </button>
-
-          <button
-            onClick={() => router.push("/child/home")}
-            className="flex items-center gap-4 bg-white rounded-2xl p-5 w-full text-left active:scale-[0.98] transition-transform hover:shadow-md border border-gray-100"
-            style={{ boxShadow: "var(--hb-shadow)" }}
-          >
-            <span className="text-3xl shrink-0">🧒</span>
-            <div className="flex-1">
-              <p className="font-bold text-gray-900">아이용으로 시작하기</p>
-              <p className="text-xs text-gray-400 mt-0.5">초대 코드를 입력하여 가족에 합류하기</p>
-            </div>
-            <span className="text-gray-300 text-lg">›</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  return null;
 }
+
+
 

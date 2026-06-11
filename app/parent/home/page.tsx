@@ -59,10 +59,6 @@ export default function ParentHomePage() {
   const [creatingFam, setCreatingFam] = useState(false);
   const [editingFam, setEditingFam] = useState(false);
   const [newFamName, setNewFamName] = useState("");
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteUrl, setInviteUrl] = useState("");
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [inviting, setInviting] = useState(false);
 
   const activeChild = children[activeIdx] ?? null;
 
@@ -473,24 +469,7 @@ export default function ParentHomePage() {
               </div>
             </Link>
 
-            {/* 부모 초대하기 카드 */}
-            <button
-              onClick={() => { setShowInviteModal(true); setInviteUrl(""); setInviteEmail(""); }}
-              className="flex items-center justify-between w-full bg-white rounded-2xl p-5 text-left active:opacity-75 transition-all hover:shadow-md duration-200 border border-gray-100"
-              style={{ boxShadow: "var(--hb-shadow)" }}
-            >
-              <div className="flex items-center gap-3.5">
-                <span className="text-2xl">✉️</span>
-                <div>
-                  <p className="text-sm font-bold text-gray-900">부모 초대하기</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--hb-muted)" }}>다른 보호자를 초대해 함께 돌봐요</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <span className="text-xs font-semibold" style={{ color: "var(--hb-primary)" }}>초대</span>
-                <span style={{ color: "var(--hb-primary)" }}><ChevronRight color="currentColor" /></span>
-              </div>
-            </button>
+
 
             {/* 전문가와 연결하기 카드 (딤 처리 및 준비 중 배지) */}
             <div
@@ -519,89 +498,7 @@ export default function ParentHomePage() {
         </div>
       </div>
 
-      {/* 부모 초대 모달 */}
-      {showInviteModal && (
-        <>
-          <div className="fixed inset-0 z-[110] bg-black/40" onClick={() => setShowInviteModal(false)} />
-          <div
-            className="fixed bottom-0 left-0 right-0 z-[120] bg-white rounded-t-3xl px-5 pt-5 pb-10 md:max-w-[420px] md:mx-auto md:left-1/2 md:-translate-x-1/2"
-            style={{ boxShadow: "0 -4px 32px rgba(0,0,0,0.12)" }}
-          >
-            <div className="w-10 h-1 rounded-full bg-gray-200 mx-auto mb-4" />
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-bold text-gray-900">보호자 초대하기 ✉️</h2>
-              <button onClick={() => setShowInviteModal(false)} className="text-gray-400 text-xl leading-none">✕</button>
-            </div>
-            
-            {!inviteUrl ? (
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                if (!inviteEmail.trim()) return;
-                setInviting(true);
-                try {
-                  const res = await fetch(`/api/families/${store.activeFamilyId}/invite-parent`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ email: inviteEmail.trim() }),
-                  });
-                  if (res.ok) {
-                    const data = await res.json();
-                    setInviteUrl(data.invite_url);
-                  } else {
-                    alert("초대에 실패했습니다. 이메일을 확인해 주세요.");
-                  }
-                } catch {
-                  alert("에러가 발생했습니다. 다시 시도해 주세요.");
-                } finally {
-                  setInviting(false);
-                }
-              }} className="flex flex-col gap-4">
-                <div>
-                  <label className="block text-xs font-bold mb-1.5 text-gray-700">초대할 보호자 이메일</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="example@email.com"
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    className="w-full px-4 py-3 rounded-2xl bg-gray-50 text-sm outline-none border-2 border-transparent transition-colors"
-                    onFocus={(e) => (e.target.style.borderColor = "var(--hb-primary)")}
-                    onBlur={(e) => (e.target.style.borderColor = "transparent")}
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={inviting || !inviteEmail.trim()}
-                  className="w-full py-3.5 rounded-2xl font-bold text-white transition-opacity disabled:opacity-40"
-                  style={{ background: "var(--hb-primary)" }}
-                >
-                  {inviting ? "링크 생성 중..." : "초대 링크 생성 →"}
-                </button>
-              </form>
-            ) : (
-              <div className="flex flex-col gap-4">
-                <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-center">
-                  <p className="text-sm font-semibold text-green-800">초대 링크가 생성되었습니다!</p>
-                  <p className="text-xs text-green-600 mt-1">아래 링크를 복사하여 상대 보호자에게 전달하세요.</p>
-                </div>
-                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs break-all font-mono">
-                  {inviteUrl}
-                </div>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(inviteUrl);
-                    alert("초대 링크가 복사되었습니다!");
-                  }}
-                  className="w-full py-3.5 rounded-2xl font-bold text-white"
-                  style={{ background: "var(--hb-primary)" }}
-                >
-                  초대 링크 복사
-                </button>
-              </div>
-            )}
-          </div>
-        </>
-      )}
+
 
       <ParentTabBar />
     </div>

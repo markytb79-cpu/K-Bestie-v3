@@ -10,56 +10,49 @@ type ChildInfo = { id: string; name: string; grade: string };
 export default function ChildHomePage() {
   const [child, setChild] = useState<ChildInfo | null>(null);
   const [noChild, setNoChild] = useState(false);
-  const [inviteCode, setInviteCode] = useState("");
-  const [joinError, setJoinError] = useState<string | null>(null);
-  const [joining, setJoining] = useState(false);
   const store = useStore();
   const missions = store.missions;
   const completedCount = missions.filter((m) => m.completed).length;
   const totalCount = missions.length;
 
   useEffect(() => {
-    const id = localStorage.getItem("k_child_id");
-    if (!id) {
-      setNoChild(true);
-      return;
-    }
-    fetch(`/api/child/${encodeURIComponent(id)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data) setChild(data); else setNoChild(true); })
-      .catch(() => {});
+    // 1. /api/child/me를 호출하여 세션 기반의 아이 프로필 확인
+    fetch("/api/child/me")
+      .then(async (r) => {
+        if (r.ok) {
+          const data = await r.json();
+          if (data && data.id) {
+            setChild(data);
+            localStorage.setItem("k_child_id", data.id);
+            return true;
+          }
+        }
+        return false;
+      })
+      .then((success) => {
+        if (success) return;
+
+        // 2. 세션에 없으면 기존 localStorage 및 ID 매핑 폴백
+        const id = localStorage.getItem("k_child_id");
+        if (!id) {
+          setNoChild(true);
+          return;
+        }
+        fetch(`/api/child/${encodeURIComponent(id)}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => { if (data) setChild(data); else setNoChild(true); })
+          .catch(() => setNoChild(true));
+      })
+      .catch(() => setNoChild(true));
   }, []);
 
-  const handleJoinFamily = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inviteCode.trim() || inviteCode.length !== 6) {
-      setJoinError("6자리 초대 코드를 입력해주세요.");
-      return;
-    }
-    setJoining(true);
-    setJoinError(null);
-    try {
-      const res = await fetch("/api/auth/join-child", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: inviteCode.trim().toUpperCase() }),
-      });
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || "가족 연결에 실패했습니다.");
-      }
-      const data = await res.json();
-      if (data.child_profile_id) {
-        localStorage.setItem("k_child_id", data.child_profile_id);
-        window.location.reload();
-      } else {
-        throw new Error("아이 프로필 ID를 찾을 수 없습니다.");
-      }
-    } catch (err: any) {
-      setJoinError(err.message);
-    } finally {
-      setJoining(false);
-    }
+  const handleLogout = async () => {
+    const { createClient } = await import("@/lib/supabase/client");
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    localStorage.removeItem("k_child_id");
+    localStorage.removeItem("login_role");
+    window.location.href = "/login?role=child";
   };
 
   if (noChild) {
@@ -70,37 +63,21 @@ export default function ChildHomePage() {
       >
         <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-sm border border-emerald-500/10">
           <p className="text-5xl mb-4">🌱</p>
-          <p className="text-lg font-bold text-gray-800">초대 코드를 입력해주세요</p>
-          <p className="text-xs mt-2 leading-relaxed" style={{ color: "var(--color-text-muted)" }}>
-            부모님이 발급해주신 6자리 초대 코드를 입력하여<br />가족 그룹에 합류할 수 있습니다.
+          <p className="text-lg font-bold text-gray-800">가족 연결이 필요해요</p>
+          <p className="text-xs mt-3 leading-relaxed text-gray-500">
+            현재 로그인한 구글 계정이 가족에 등록되어 있지 않습니다.
+            <br />
+            부모님 앱에서 아이 추가 화면을 통해 이메일을 예약 등록했는지 확인해 주세요.
           </p>
 
-          <form onSubmit={handleJoinFamily} className="mt-6 space-y-4">
-            <input
-              type="text"
-              maxLength={6}
-              value={inviteCode}
-              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-              placeholder="코드를 입력하세요 (예: ABCDEF)"
-              className="w-full text-center text-lg font-bold tracking-widest rounded-2xl px-4 py-3 border-2 border-transparent outline-none transition-colors"
-              style={{ background: "#F9FAF6", border: "1px solid rgba(26,107,90,0.12)" }}
-            />
-
-            {joinError && (
-              <p className="text-xs text-red-500 font-semibold mt-1">{joinError}</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={joining}
-              className="w-full py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform disabled:opacity-50"
-              style={{ background: "var(--color-primary)" }}
-            >
-              {joining ? "연결하는 중..." : "가족 연결하기"}
-            </button>
-          </form>
+          <button
+            onClick={handleLogout}
+            className="w-full py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform mt-6 cursor-pointer"
+            style={{ background: "var(--color-primary)" }}
+          >
+            로그아웃 후 다시 로그인하기
+          </button>
         </div>
-        <ChildTabBar />
       </div>
     );
   }
