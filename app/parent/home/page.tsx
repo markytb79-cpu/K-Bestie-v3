@@ -108,7 +108,7 @@ export default function ParentHomePage() {
       const res = await fetch("/api/family-join-requests/incoming");
       if (res.ok) {
         const data = await res.json();
-        setIncomingRequests(data.requests ?? []);
+        setIncomingRequests(data.invites ?? []);
       }
     } catch (err) {
       console.error("Failed to load incoming requests:", err);
@@ -383,7 +383,7 @@ export default function ParentHomePage() {
                         <p className="text-xs font-bold text-gray-800 truncate">
                           {req.family_name ? `${req.family_name}에 초대됨` : "가족에 초대받음"}
                         </p>
-                        <p className="text-[10px] text-gray-400 mt-0.5 truncate">보낸이: {req.owner_email}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5 truncate">보낸이: {req.invited_by_email}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         <div className="flex gap-1">
