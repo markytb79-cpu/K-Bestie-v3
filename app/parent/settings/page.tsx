@@ -59,6 +59,10 @@ export default function ParentSettingsPage() {
   const [addUsername, setAddUsername] = useState("");
   const [addPassword, setAddPassword] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
+
+  // 보낸 초대 목록 상태
+  const [sentInvites, setSentInvites] = useState<any[]>([]);
+  const [loadingSentInvites, setLoadingSentInvites] = useState(true);
   
   // 아이 추가 전용 상태
   const [addChildGrade, setAddChildGrade] = useState("1학년");
@@ -188,6 +192,40 @@ export default function ParentSettingsPage() {
     }
   };
 
+  const loadSentInvites = async () => {
+    if (!store.activeFamilyId || !isOwner) {
+      setLoadingSentInvites(false);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/families/${store.activeFamilyId}/sent-invites?status=pending`);
+      if (res.ok) {
+        const data = await res.json();
+        setSentInvites(data.requests ?? data.invitations ?? []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingSentInvites(false);
+    }
+  };
+
+  const handleCancelInvite = async (requestId: string) => {
+    try {
+      const res = await fetch(`/api/families/${store.activeFamilyId}/sent-invites/${requestId}/cancel`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        await loadSentInvites();
+      } else {
+        const data = await res.json();
+        alert(data.error || "초대 취소에 실패했습니다.");
+      }
+    } catch {
+      alert("네트워크 에러가 발생했습니다.");
+    }
+  };
+
   useEffect(() => {
     loadFamilyMembers();
   }, [store.activeFamilyId]);
@@ -195,8 +233,10 @@ export default function ParentSettingsPage() {
   useEffect(() => {
     if (store.activeFamilyId && isOwner) {
       loadJoinRequests();
+      loadSentInvites();
     } else {
       setLoadingRequests(false);
+      setLoadingSentInvites(false);
     }
   }, [store.activeFamilyId, isOwner]);
 
@@ -365,6 +405,7 @@ export default function ParentSettingsPage() {
       setInviteEmail("");
       alert("성공적으로 초대를 보냈습니다!");
       await loadFamilyMembers();
+      await loadSentInvites();
     } catch (err) {
       setAddError("네트워크 에러가 발생했습니다.");
     } finally {
@@ -531,10 +572,13 @@ export default function ParentSettingsPage() {
               </div>
             </div>
 
-            {/* 보호자 관리 */}
+            {/* (a) 함께하는 보호자 목록 */}
             <div>
-              <SectionHeader title="보호자" />
+              <SectionHeader title="함께하는 보호자 목록" />
               <div className="bg-white rounded-2xl overflow-hidden mb-5" style={{ boxShadow: "var(--hb-shadow)" }}>
+                <p className="text-[11px] text-gray-400 leading-relaxed border-b border-gray-100 p-4 pb-2">
+                  현재 우리 가족의 아이들을 함께 돌보고 있는 보호자 목록입니다. 오너는 새로운 보호자를 초대하거나 가족 설정을 변경할 수 있습니다.
+                </p>
                 {loadingMembers ? (
                   <p className="text-xs text-center py-6 text-gray-400">보호자 정보를 불러오는 중...</p>
                 ) : familyMembers.filter((m) => m.role !== "child").length === 0 ? (
@@ -604,21 +648,59 @@ export default function ParentSettingsPage() {
                       <span className="text-lg">+</span>
                       보호자 초대하기
                     </button>
-                    <p className="text-[11px] text-gray-400 text-center py-2 bg-gray-50/50 border-t border-gray-100">
-                      배우자가 직접 신청할 수도, 여기서 이메일로 초대할 수도 있어요
-                    </p>
                   </>
                 )}
               </div>
             </div>
 
-            {/* 가족 구성원 승인 관리 */}
+            {/* (b) 내가 보낸 초대 (수락 대기) */}
             {isOwner && (
               <div>
-                <SectionHeader title="가족 구성원 승인 대기" />
+                <SectionHeader title="내가 보낸 초대 (수락 대기)" />
+                <div className="bg-white rounded-2xl overflow-hidden mb-5 p-4 flex flex-col gap-3" style={{ boxShadow: "var(--hb-shadow)" }}>
+                  <p className="text-[11px] text-gray-400 leading-relaxed border-b border-gray-100 pb-2">
+                    배우자에게 보낸 이메일 초대장입니다. 상대방이 수락하면 우리 가족으로 즉시 합류합니다.
+                  </p>
+                  {loadingSentInvites ? (
+                    <p className="text-xs text-center py-4 text-gray-400">초대 정보를 불러오는 중...</p>
+                  ) : sentInvites.length === 0 ? (
+                    <p className="text-xs text-center py-4 text-gray-400">보낸 초대가 없어요</p>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {sentInvites.map((inv) => (
+                        <div key={inv.id} className="flex items-center justify-between border-b border-gray-50 pb-3 last:border-0 last:pb-0">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">{inv.target_email}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[10px] text-gray-400">
+                                초대일시: {new Date(inv.created_at).toLocaleString("ko-KR")}
+                              </span>
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200/50">
+                                수락 대기 중
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleCancelInvite(inv.id)}
+                            className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold active:scale-95 transition-transform shrink-0"
+                          >
+                            초대 취소
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* (c) 가족 구성원 승인 대기 */}
+            {isOwner && (
+              <div>
+                <SectionHeader title="가족 구성원 신청 대기 (가입 신청)" />
                 <div className="bg-white rounded-2xl overflow-hidden p-4 flex flex-col gap-3 mb-5" style={{ boxShadow: "var(--hb-shadow)" }}>
                   <p className="text-[11px] text-gray-400 leading-relaxed border-b border-gray-100 pb-2">
-                    배우자가 가족 참여 신청을 보낸 경우 아래에 나타납니다. 승인하면 우리 가족으로 즉시 합류합니다.
+                    배우자가 직접 우리 가족을 찾아서 보낸 참여 신청 목록입니다. 승인 시 우리 가족에 바로 합류합니다.
                   </p>
                   {loadingRequests ? (
                     <p className="text-xs text-center py-4 text-gray-400">신청 정보를 불러오는 중...</p>
@@ -1048,29 +1130,26 @@ export default function ParentSettingsPage() {
         </>
       )}
 
-      {/* ── 보호자 추가 바텀 시트 (이메일 초대) ─────────────────────────────── */}
+      {/* ── 보호자 초대 모달 (화면 중앙 오버레이) ─────────────────────────────── */}
       {showAddParentForm && (
-        <>
-          {/* 오버레이 */}
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          {/* 반투명 어두운 배경 */}
           <div
-            className="fixed inset-0 z-[110] bg-black/40"
+            className="absolute inset-0 bg-black/50"
             onClick={() => setShowAddParentForm(false)}
           />
 
-          {/* 시트 */}
+          {/* 모달 본체 */}
           <div
-            className="fixed bottom-0 left-0 right-0 z-[120] bg-white rounded-t-3xl px-5 pt-5 pb-10 md:max-w-[420px] md:mx-auto md:left-1/2 md:-translate-x-1/2 max-h-[85vh] overflow-y-auto"
-            style={{ boxShadow: "0 -4px 32px rgba(0,0,0,0.12)" }}
+            className="relative z-10 w-full max-w-[400px] bg-white rounded-3xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200"
+            style={{ maxHeight: "85vh", overflowY: "auto" }}
           >
-            {/* 시트 핸들 */}
-            <div className="w-10 h-1 rounded-full bg-gray-200 mx-auto mb-4" />
-
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-gray-900">보호자 초대하기 👩‍💼</h2>
-              <button onClick={() => setShowAddParentForm(false)} className="text-gray-400 text-xl leading-none">✕</button>
+              <button onClick={() => setShowAddParentForm(false)} className="text-gray-400 text-xl leading-none hover:text-gray-600 transition-colors">✕</button>
             </div>
 
-            <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+            <p className="text-xs text-gray-500 leading-relaxed">
               이미 가입된 배우자(보호자)의 이메일 주소를 입력해 초대장을 보내세요. 배우자가 초대를 수락하면 즉시 가족으로 합류합니다.
             </p>
 
@@ -1106,7 +1185,7 @@ export default function ParentSettingsPage() {
               </button>
             </form>
           </div>
-        </>
+        </div>
       )}
 
       {/* ── 비밀번호 초기화 바텀 시트 ─────────────────────────────────── */}
