@@ -5,6 +5,7 @@ import Link from "next/link";
 import ParentTabBar from "@/components/ParentTabBar";
 import { ChevronRight } from "@/components/ParentIcons";
 import { useStore } from "@/hooks/useStore";
+import { createClient } from "@/lib/supabase/client";
 
 function BellSvg() {
   return (
@@ -60,11 +61,103 @@ export default function ParentHomePage() {
   const [editingFam, setEditingFam] = useState(false);
   const [newFamName, setNewFamName] = useState("");
 
+  // 합류 신청 관련 상태
+  const [joinRequestStatus, setJoinRequestStatus] = useState<"loading" | "none" | "pending">("loading");
+  const [viewState, setViewState] = useState<"select" | "create_family" | "join_family">("select");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
+
   const activeChild = children[activeIdx] ?? null;
+
+  const checkJoinRequest = async () => {
+    if (store.activeFamilyId) {
+      setJoinRequestStatus("none");
+      return;
+    }
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setJoinRequestStatus("none");
+        return;
+      }
+      
+      const { data, error } = await supabase
+        .from("family_join_requests")
+        .select("id, status")
+        .eq("requester_user_id", user.id)
+        .eq("status", "pending")
+        .maybeSingle();
+
+      if (data) {
+        setJoinRequestStatus("pending");
+      } else {
+        setJoinRequestStatus("none");
+      }
+    } catch (err) {
+      console.error(err);
+      setJoinRequestStatus("none");
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (mounted && !store.activeFamilyId) {
+      checkJoinRequest();
+    } else if (store.activeFamilyId) {
+      setJoinRequestStatus("none");
+    }
+  }, [mounted, store.activeFamilyId]);
+
+  // 대기 상태인 경우 5초 간격 폴링
+  useEffect(() => {
+    if (joinRequestStatus !== "pending" || store.activeFamilyId) return;
+
+    const interval = setInterval(async () => {
+      const { syncChildrenFromDB } = await import("@/lib/store");
+      await syncChildrenFromDB();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [joinRequestStatus, store.activeFamilyId]);
+
+  const handleJoinRequestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ownerEmail.trim()) return;
+    setJoinError(null);
+    setJoining(true);
+
+    try {
+      const res = await fetch("/api/family-join-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner_email: ownerEmail.trim() }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setJoinRequestStatus("pending");
+      } else {
+        if (res.status === 404) {
+          setJoinError("해당 이메일로 만든 가족을 찾을 수 없어요");
+        } else if (res.status === 403) {
+          setJoinError("이미 보호자가 2명이라 신청할 수 없어요");
+        } else if (res.status === 409) {
+          setJoinError("이미 신청했거나 구성원이에요");
+        } else {
+          setJoinError(data.error || "신청에 실패했습니다. 이메일을 확인해 주세요.");
+        }
+      }
+    } catch {
+      setJoinError("네트워크 에러가 발생했습니다.");
+    } finally {
+      setJoining(false);
+    }
+  };
 
   // activeIdx 범위 보정 (아이 삭제 후)
   useEffect(() => {
@@ -159,8 +252,55 @@ export default function ParentHomePage() {
     </div>
   );
 
-  // 가족 없음 → 빈 상태
+  // 가족 없음 → 로딩, 버튼 선택, 가족 만들기, 참여하기, 승인 대기 화면 분기
   if (!store.activeFamilyId) {
+    // 1. 로딩 상태
+    if (joinRequestStatus === "loading") {
+      return (
+        <div className="min-h-dvh flex items-center justify-center" style={{ background: "var(--hb-bg)" }}>
+          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--hb-primary) var(--hb-primary) transparent transparent" }} />
+        </div>
+      );
+    }
+
+    // 2. 승인 대기 상태
+    if (joinRequestStatus === "pending") {
+      return (
+        <div className="min-h-dvh pb-[72px] lg:pb-10 lg:pl-[240px] w-full" style={{ background: "var(--hb-bg)" }}>
+          <div className="bg-white px-5 pt-12 pb-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium" style={{ color: "var(--hb-muted)" }}>내친구 케이</p>
+              <h1 className="text-[17px] font-bold text-gray-900 mt-0.5">안녕하세요, 보호자님 👋</h1>
+            </div>
+          </div>
+          <div className="max-w-md mx-auto px-5 py-14 flex flex-col items-center text-center gap-6">
+            <p className="text-5xl">⏳</p>
+            <div>
+              <p className="text-base font-bold text-gray-800">가입 신청 대기 중</p>
+              <p className="text-sm mt-1.5 leading-relaxed" style={{ color: "var(--hb-muted)" }}>
+                신청이 접수됐어요. 오너의 승인을 기다려주세요.
+              </p>
+            </div>
+            <div className="w-full flex flex-col gap-2.5">
+              <button
+                onClick={async () => {
+                  const { syncChildrenFromDB } = await import("@/lib/store");
+                  await syncChildrenFromDB();
+                  await checkJoinRequest();
+                }}
+                className="w-full py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform"
+                style={{ background: "var(--hb-primary)" }}
+              >
+                새로고침
+              </button>
+            </div>
+          </div>
+          <ParentTabBar />
+        </div>
+      );
+    }
+
+    // 3. 가족도 없고 신청도 없는 경우
     return (
       <div className="min-h-dvh pb-[72px] lg:pb-10 lg:pl-[240px] w-full" style={{ background: "var(--hb-bg)" }}>
         <div className="bg-white px-5 pt-12 pb-4 flex items-center justify-between">
@@ -169,52 +309,136 @@ export default function ParentHomePage() {
             <h1 className="text-[17px] font-bold text-gray-900 mt-0.5">안녕하세요, 보호자님 👋</h1>
           </div>
         </div>
-        <div className="max-w-md mx-auto px-5 py-14 flex flex-col items-center text-center gap-6">
-          <p className="text-5xl">🏡</p>
-          <div>
-            <p className="text-base font-bold text-gray-800">아직 가족 그룹이 없어요</p>
-            <p className="text-sm mt-1.5 leading-relaxed" style={{ color: "var(--hb-muted)" }}>
-              가족 그룹을 만들고 아이를 등록해 보세요.
-            </p>
+
+        {viewState === "select" && (
+          <div className="max-w-md mx-auto px-5 py-14 flex flex-col items-center text-center gap-6">
+            <p className="text-5xl">🏡</p>
+            <div>
+              <p className="text-base font-bold text-gray-800">반가워요! 어떻게 시작할까요?</p>
+              <p className="text-sm mt-1.5 leading-relaxed" style={{ color: "var(--hb-muted)" }}>
+                가족을 새로 만들거나, 이미 만들어진 가족에 참여할 수 있습니다.
+              </p>
+            </div>
+            <div className="w-full flex flex-col gap-3">
+              <button
+                onClick={() => setViewState("create_family")}
+                className="w-full py-4 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform"
+                style={{ background: "var(--hb-primary)" }}
+              >
+                가족 만들기
+              </button>
+              <button
+                onClick={() => {
+                  setViewState("join_family");
+                  setJoinError(null);
+                  setOwnerEmail("");
+                }}
+                className="w-full py-4 rounded-2xl font-bold text-sm bg-white border border-gray-200 text-gray-700 active:scale-[0.98] transition-transform"
+                style={{ boxShadow: "var(--hb-shadow)" }}
+              >
+                가족 구성원으로 참여하기
+              </button>
+            </div>
           </div>
-          <form onSubmit={async (e) => {
-            e.preventDefault();
-            if (!famName.trim()) return;
-            setCreatingFam(true);
-            try {
-              const res = await fetch("/api/families", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: famName.trim() }),
-              });
-              if (res.ok) {
-                const { syncChildrenFromDB } = await import("@/lib/store");
-                await syncChildrenFromDB();
+        )}
+
+        {viewState === "create_family" && (
+          <div className="max-w-md mx-auto px-5 py-14 flex flex-col items-center text-center gap-6">
+            <p className="text-5xl">🛠️</p>
+            <div>
+              <p className="text-base font-bold text-gray-800">새로운 가족 만들기</p>
+              <p className="text-sm mt-1.5 leading-relaxed" style={{ color: "var(--hb-muted)" }}>
+                가족 그룹을 만들고 아이를 등록해 보세요.
+              </p>
+            </div>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!famName.trim()) return;
+              setCreatingFam(true);
+              try {
+                const res = await fetch("/api/families", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: famName.trim() }),
+                });
+                if (res.ok) {
+                  const { syncChildrenFromDB } = await import("@/lib/store");
+                  await syncChildrenFromDB();
+                }
+              } catch (err) {
+                console.error(err);
+              } finally {
+                setCreatingFam(false);
               }
-            } catch (err) {
-              console.error(err);
-            } finally {
-              setCreatingFam(false);
-            }
-          }} className="w-full flex flex-col gap-3">
-            <input
-              type="text"
-              placeholder="예) 서준이네 가족"
-              value={famName}
-              onChange={(e) => setFamName(e.target.value)}
-              className="w-full rounded-2xl px-4 py-3.5 text-sm border border-gray-200 outline-none transition-colors bg-white"
-              style={{ boxShadow: "var(--hb-shadow)" }}
-            />
-            <button
-              type="submit"
-              disabled={creatingFam || !famName.trim()}
-              className="w-full py-3.5 rounded-2xl font-bold text-white text-sm disabled:opacity-50 active:scale-[0.98] transition-transform"
-              style={{ background: "var(--hb-primary)" }}
-            >
-              {creatingFam ? "가족 만드는 중..." : "가족 만들기 →"}
-            </button>
-          </form>
-        </div>
+            }} className="w-full flex flex-col gap-3">
+              <input
+                type="text"
+                placeholder="예) 서준이네 가족"
+                value={famName}
+                onChange={(e) => setFamName(e.target.value)}
+                className="w-full rounded-2xl px-4 py-3.5 text-sm border border-gray-200 outline-none transition-colors bg-white"
+                style={{ boxShadow: "var(--hb-shadow)" }}
+              />
+              <button
+                type="submit"
+                disabled={creatingFam || !famName.trim()}
+                className="w-full py-3.5 rounded-2xl font-bold text-white text-sm disabled:opacity-50 active:scale-[0.98] transition-transform"
+                style={{ background: "var(--hb-primary)" }}
+              >
+                {creatingFam ? "가족 만드는 중..." : "가족 만들기 →"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewState("select")}
+                className="text-xs font-semibold text-gray-500 hover:underline mt-2"
+              >
+                뒤로 가기
+              </button>
+            </form>
+          </div>
+        )}
+
+        {viewState === "join_family" && (
+          <div className="max-w-md mx-auto px-5 py-14 flex flex-col items-center text-center gap-6">
+            <p className="text-5xl">🤝</p>
+            <div>
+              <p className="text-base font-bold text-gray-800">가족 구성원으로 참여하기</p>
+              <p className="text-sm mt-1.5 leading-relaxed" style={{ color: "var(--hb-muted)" }}>
+                이미 가족을 만든 오너(배우자)의 이메일 주소를 입력해 참여 신청을 보내세요.
+              </p>
+            </div>
+            <form onSubmit={handleJoinRequestSubmit} className="w-full flex flex-col gap-3">
+              <input
+                type="email"
+                placeholder="오너의 이메일 주소 (예: owner@example.com)"
+                value={ownerEmail}
+                onChange={(e) => setOwnerEmail(e.target.value)}
+                className="w-full rounded-2xl px-4 py-3.5 text-sm border border-gray-200 outline-none transition-colors bg-white text-left"
+                style={{ boxShadow: "var(--hb-shadow)" }}
+                required
+              />
+              {joinError && (
+                <p className="text-xs font-semibold text-red-500 text-left px-1 mt-0.5">{joinError}</p>
+              )}
+              <button
+                type="submit"
+                disabled={joining || !ownerEmail.trim()}
+                className="w-full py-3.5 rounded-2xl font-bold text-white text-sm disabled:opacity-50 active:scale-[0.98] transition-transform"
+                style={{ background: "var(--hb-primary)" }}
+              >
+                {joining ? "신청하는 중..." : "신청하기 →"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewState("select")}
+                className="text-xs font-semibold text-gray-500 hover:underline mt-2"
+              >
+                뒤로 가기
+              </button>
+            </form>
+          </div>
+        )}
+
         <ParentTabBar />
       </div>
     );

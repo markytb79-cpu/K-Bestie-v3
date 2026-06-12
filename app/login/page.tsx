@@ -28,7 +28,9 @@ function LoginContent() {
     
     localStorage.setItem("login_role", "owner");
 
-    const redirectTo = `${window.location.origin}/auth/callback${
+    // 접속한 실제 도메인을 그대로 사용; 0.0.0.0만 localhost로 치환
+    const appOrigin = window.location.origin.replace("//0.0.0.0", "//localhost");
+    const redirectTo = `${appOrigin}/auth/callback${
       returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ""
     }`;
 

@@ -80,6 +80,10 @@ export default function ParentSettingsPage() {
   const [editInterests, setEditInterests] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // 가입 신청 목록 및 로딩 상태
+  const [joinRequests, setJoinRequests] = useState<any[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(true);
+
   // 로그인 이메일 및 구성원 정보 로드
   useEffect(() => {
     setMounted(true);
@@ -157,9 +161,68 @@ export default function ParentSettingsPage() {
     }
   };
 
+  const loadJoinRequests = async () => {
+    if (!store.activeFamilyId || !isOwner) {
+      setLoadingRequests(false);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/families/${store.activeFamilyId}/join-requests?status=pending`);
+      if (res.ok) {
+        const data = await res.json();
+        setJoinRequests(data.requests ?? []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
   useEffect(() => {
     loadFamilyMembers();
   }, [store.activeFamilyId]);
+
+  useEffect(() => {
+    if (store.activeFamilyId && isOwner) {
+      loadJoinRequests();
+    } else {
+      setLoadingRequests(false);
+    }
+  }, [store.activeFamilyId, isOwner]);
+
+  const handleApproveRequest = async (requestId: string) => {
+    try {
+      const res = await fetch(`/api/families/${store.activeFamilyId}/join-requests/${requestId}/approve`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        setJoinRequests((prev) => prev.filter((r) => r.id !== requestId));
+        await loadFamilyMembers();
+      } else {
+        const data = await res.json();
+        alert(data.error || "승인 처리에 실패했습니다.");
+      }
+    } catch {
+      alert("네트워크 에러가 발생했습니다.");
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    try {
+      const res = await fetch(`/api/families/${store.activeFamilyId}/join-requests/${requestId}/reject`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        setJoinRequests((prev) => prev.filter((r) => r.id !== requestId));
+      } else {
+        const data = await res.json();
+        alert(data.error || "거절 처리에 실패했습니다.");
+      }
+    } catch {
+      alert("네트워크 에러가 발생했습니다.");
+    }
+  };
 
   if (!mounted) {
     return (
@@ -421,6 +484,47 @@ export default function ParentSettingsPage() {
                 )}
               </div>
             </div>
+
+            {/* 가족 구성원 승인 관리 */}
+            {isOwner && (
+              <div>
+                <SectionHeader title="가족 구성원 승인 대기" />
+                <div className="bg-white rounded-2xl overflow-hidden p-4 flex flex-col gap-3 mb-5" style={{ boxShadow: "var(--hb-shadow)" }}>
+                  {loadingRequests ? (
+                    <p className="text-xs text-center py-4 text-gray-400">신청 정보를 불러오는 중...</p>
+                  ) : joinRequests.length === 0 ? (
+                    <p className="text-xs text-center py-4 text-gray-400">대기 중인 신청이 없어요</p>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {joinRequests.map((req) => (
+                        <div key={req.id} className="flex items-center justify-between border-b border-gray-50 pb-3 last:border-0 last:pb-0">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">{req.requester_email}</p>
+                            <p className="text-[10px] text-gray-400 mt-0.5">
+                              신청일시: {new Date(req.created_at).toLocaleString("ko-KR")}
+                            </p>
+                          </div>
+                          <div className="flex gap-1.5 shrink-0">
+                            <button
+                              onClick={() => handleApproveRequest(req.id)}
+                              className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold active:scale-95 transition-transform hover:bg-blue-100"
+                            >
+                              승인
+                            </button>
+                            <button
+                              onClick={() => handleRejectRequest(req.id)}
+                              className="px-3 py-1.5 bg-gray-50 text-gray-500 rounded-xl text-xs font-bold active:scale-95 transition-transform hover:bg-gray-100"
+                            >
+                              거절
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* 부모 질문 관리 */}
             <div>
@@ -690,37 +794,6 @@ export default function ParentSettingsPage() {
             </div>
 
             <form onSubmit={handleAddMember} className="flex flex-col gap-4">
-              {/* 역할 선택 탭 */}
-              <div>
-                <label className="block text-xs font-bold mb-1.5 text-gray-700">역할</label>
-                <div className="flex gap-2 bg-gray-100 p-1 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => { setAddRole("child"); setAddError(null); }}
-                    className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                    style={{
-                      background: addRole === "child" ? "white" : "transparent",
-                      boxShadow: addRole === "child" ? "0 2px 4px rgba(0,0,0,0.05)" : "none",
-                      color: addRole === "child" ? "var(--hb-primary)" : "#6B7280"
-                    }}
-                  >
-                    자녀 (아이)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setAddRole("parent"); setAddError(null); }}
-                    className="flex-1 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                    style={{
-                      background: addRole === "parent" ? "white" : "transparent",
-                      boxShadow: addRole === "parent" ? "0 2px 4px rgba(0,0,0,0.05)" : "none",
-                      color: addRole === "parent" ? "var(--hb-primary)" : "#6B7280"
-                    }}
-                  >
-                    배우자 (부모)
-                  </button>
-                </div>
-              </div>
-
               {/* 이름 */}
               <div>
                 <label className="block text-xs font-bold mb-1.5 text-gray-700">이름</label>
