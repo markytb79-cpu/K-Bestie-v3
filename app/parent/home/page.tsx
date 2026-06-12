@@ -67,6 +67,7 @@ export default function ParentHomePage() {
   const [ownerEmail, setOwnerEmail] = useState("");
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
+  const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
 
   const activeChild = children[activeIdx] ?? null;
 
@@ -84,11 +85,11 @@ export default function ParentHomePage() {
       }
       
       const { data, error } = await supabase
-        .from("family_join_requests")
-        .select("id, status")
-        .eq("requester_user_id", user.id)
-        .eq("status", "pending")
-        .maybeSingle();
+          .from("family_join_requests")
+          .select("id, status")
+          .eq("requester_user_id", user.id)
+          .eq("status", "pending")
+          .maybeSingle();
 
       if (data) {
         setJoinRequestStatus("pending");
@@ -101,6 +102,52 @@ export default function ParentHomePage() {
     }
   };
 
+  const loadIncomingRequests = async () => {
+    if (store.activeFamilyId) return;
+    try {
+      const res = await fetch("/api/family-join-requests/incoming");
+      if (res.ok) {
+        const data = await res.json();
+        setIncomingRequests(data.requests ?? []);
+      }
+    } catch (err) {
+      console.error("Failed to load incoming requests:", err);
+    }
+  };
+
+  const handleAcceptInvite = async (requestId: string) => {
+    try {
+      const res = await fetch(`/api/family-join-requests/${requestId}/accept`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        const { syncChildrenFromDB } = await import("@/lib/store");
+        await syncChildrenFromDB();
+      } else {
+        const data = await res.json();
+        alert(data.error || "초대 수락에 실패했습니다.");
+      }
+    } catch {
+      alert("네트워크 에러가 발생했습니다.");
+    }
+  };
+
+  const handleDeclineInvite = async (requestId: string) => {
+    try {
+      const res = await fetch(`/api/family-join-requests/${requestId}/decline`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        await loadIncomingRequests();
+      } else {
+        const data = await res.json();
+        alert(data.error || "초대 거절에 실패했습니다.");
+      }
+    } catch {
+      alert("네트워크 에러가 발생했습니다.");
+    }
+  };
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -108,6 +155,7 @@ export default function ParentHomePage() {
   useEffect(() => {
     if (mounted && !store.activeFamilyId) {
       checkJoinRequest();
+      loadIncomingRequests();
     } else if (store.activeFamilyId) {
       setJoinRequestStatus("none");
     }
@@ -311,7 +359,7 @@ export default function ParentHomePage() {
         </div>
 
         {viewState === "select" && (
-          <div className="max-w-md mx-auto px-5 py-14 flex flex-col items-center text-center gap-6">
+          <div className="max-w-md mx-auto px-5 py-10 flex flex-col items-center text-center gap-6">
             <p className="text-5xl">🏡</p>
             <div>
               <p className="text-base font-bold text-gray-800">반가워요! 어떻게 시작할까요?</p>
@@ -319,25 +367,73 @@ export default function ParentHomePage() {
                 가족을 새로 만들거나, 이미 만들어진 가족에 참여할 수 있습니다.
               </p>
             </div>
-            <div className="w-full flex flex-col gap-3">
-              <button
-                onClick={() => setViewState("create_family")}
-                className="w-full py-4 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform"
-                style={{ background: "var(--hb-primary)" }}
-              >
-                가족 만들기
-              </button>
-              <button
-                onClick={() => {
-                  setViewState("join_family");
-                  setJoinError(null);
-                  setOwnerEmail("");
-                }}
-                className="w-full py-4 rounded-2xl font-bold text-sm bg-white border border-gray-200 text-gray-700 active:scale-[0.98] transition-transform"
-                style={{ boxShadow: "var(--hb-shadow)" }}
-              >
-                가족 구성원으로 참여하기
-              </button>
+
+            {/* 내 앞으로 온 가족 초대 카드 (방식 2) */}
+            {incomingRequests.length > 0 && (
+              <div className="w-full text-left bg-white rounded-2xl p-4 border border-indigo-100 shadow-sm flex flex-col gap-2.5 mb-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-lg">✉️</span>
+                  <p className="text-xs font-bold text-gray-900">내 앞으로 온 가족 초대</p>
+                </div>
+                
+                <div className="flex flex-col gap-2">
+                  {incomingRequests.map((req) => (
+                    <div key={req.id} className="bg-indigo-50/30 rounded-xl p-3 border border-indigo-50 flex items-center justify-between gap-2.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-gray-800 truncate">
+                          {req.family_name ? `${req.family_name}에 초대됨` : "가족에 초대받음"}
+                        </p>
+                        <p className="text-[10px] text-gray-400 mt-0.5 truncate">보낸이: {req.owner_email}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => handleAcceptInvite(req.id)}
+                            className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer active:scale-95"
+                          >
+                            수락
+                          </button>
+                          <button
+                            onClick={() => handleDeclineInvite(req.id)}
+                            className="px-2.5 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 rounded-lg text-[11px] font-bold transition-colors cursor-pointer active:scale-95"
+                          >
+                            거절
+                          </button>
+                        </div>
+                        <span className="text-[9px] text-gray-400">수락: 가족에 합류 / 거절: 초대 취소</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="w-full flex flex-col gap-4">
+              <div className="flex flex-col gap-1 w-full text-left">
+                <button
+                  onClick={() => setViewState("create_family")}
+                  className="w-full py-4 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform text-center"
+                  style={{ background: "var(--hb-primary)" }}
+                >
+                  가족 만들기
+                </button>
+                <p className="text-[10px] text-gray-400 pl-1">내가 직접 가족 그룹을 새로 만들고 자녀를 관리해요.</p>
+              </div>
+
+              <div className="flex flex-col gap-1 w-full text-left">
+                <button
+                  onClick={() => {
+                    setViewState("join_family");
+                    setJoinError(null);
+                    setOwnerEmail("");
+                  }}
+                  className="w-full py-4 rounded-2xl font-bold text-sm bg-white border border-gray-200 text-gray-700 active:scale-[0.98] transition-transform text-center"
+                  style={{ boxShadow: "var(--hb-shadow)" }}
+                >
+                  가족 구성원으로 참여하기
+                </button>
+                <p className="text-[10px] text-gray-400 pl-1">배우자가 이미 만든 가족에 참여 신청을 보내요.</p>
+              </div>
             </div>
           </div>
         )}

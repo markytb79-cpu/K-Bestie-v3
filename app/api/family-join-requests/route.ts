@@ -120,6 +120,8 @@ export async function POST(req: NextRequest) {
       family_id: familyId,
       requester_user_id: user.id,
       requester_email: requesterEmail,
+      direction: "member_request",
+      target_user_id: null,
       status: "pending",
     })
     .select("id, family_id, status, created_at")

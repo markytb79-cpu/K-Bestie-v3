@@ -51,12 +51,14 @@ export default function ParentSettingsPage() {
   const [isOwner, setIsOwner] = useState(false);
   const [loadingMembers, setLoadingMembers] = useState(true);
 
-  // 구성원 추가 폼 상태
-  const [showAddForm, setShowAddForm] = useState(false);
+  // 구성원 추가 폼 상태 (아이/보호자 개별)
+  const [showAddChildForm, setShowAddChildForm] = useState(false);
+  const [showAddParentForm, setShowAddParentForm] = useState(false);
   const [addRole, setAddRole] = useState<"parent" | "child">("child");
   const [addName, setAddName] = useState("");
   const [addUsername, setAddUsername] = useState("");
   const [addPassword, setAddPassword] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
   
   // 아이 추가 전용 상태
   const [addChildGrade, setAddChildGrade] = useState("1학년");
@@ -136,9 +138,12 @@ export default function ParentSettingsPage() {
       // 4. 결합
       const merged = family.family_members.map((m: any) => {
         const acc = accounts?.find((a: any) => a.id === m.user_id);
+        const childProf = m.role === "child"
+          ? family.child_profiles?.find((c: any) => c.member_id === m.id)
+          : null;
         
         let dispName = m.role === "child" 
-          ? (family.child_profiles?.find((c: any) => c.member_id === m.id)?.name || "") 
+          ? (childProf?.name || "") 
           : (acc?.display_name || "");
 
         if (!dispName && acc?.display_name) dispName = acc.display_name;
@@ -149,9 +154,13 @@ export default function ParentSettingsPage() {
           role: m.role,
           username: acc?.username || "",
           displayName: dispName || "구성원",
-          mustChangePassword: acc?.must_change_password ?? false
+          mustChangePassword: acc?.must_change_password ?? false,
+          isMe: m.user_id === user.id,
+          childId: childProf?.id || "",
+          grade: childProf?.grade || "",
+          interests: childProf?.interests || []
         };
-      }).filter((m: any) => m.userId !== user.id); // 자신은 제외
+      });
 
       setFamilyMembers(merged);
     } catch (err) {
@@ -273,42 +282,28 @@ export default function ParentSettingsPage() {
     );
   }
 
-  const handleAddMember = async (e: React.FormEvent) => {
+  const handleAddChild = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddError(null);
 
     if (!addName.trim()) { setAddError("이름을 입력해주세요."); return; }
     if (!addUsername.trim()) { setAddError("아이디를 입력해주세요."); return; }
     if (addPassword.length < 6) { setAddError("비밀번호는 6자 이상이어야 합니다."); return; }
-
-    if (addRole === "child") {
-      if (addChildInterests.length === 0) { setAddError("관심사를 하나 이상 선택해주세요."); return; }
-      if (!addChildConsent) { setAddError("법정대리인 동의가 필요합니다."); return; }
-    }
+    if (addChildInterests.length === 0) { setAddError("관심사를 하나 이상 선택해주세요."); return; }
+    if (!addChildConsent) { setAddError("법정대리인 동의가 필요합니다."); return; }
 
     setAddLoading(true);
     try {
-      const endpoint = addRole === "child"
-        ? `/api/families/${store.activeFamilyId}/children`
-        : `/api/families/${store.activeFamilyId}/members`;
+      const body = {
+        username: addUsername.trim(),
+        password: addPassword,
+        name: addName.trim(),
+        grade: addChildGrade,
+        interests: addChildInterests,
+        guardian_consent: addChildConsent
+      };
 
-      const body = addRole === "child"
-        ? {
-            username: addUsername.trim(),
-            password: addPassword,
-            name: addName.trim(),
-            grade: addChildGrade,
-            interests: addChildInterests,
-            guardian_consent: addChildConsent
-          }
-        : {
-            username: addUsername.trim(),
-            password: addPassword,
-            name: addName.trim(),
-            role: "parent"
-          };
-
-      const res = await fetch(endpoint, {
+      const res = await fetch(`/api/families/${store.activeFamilyId}/children`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
@@ -319,18 +314,57 @@ export default function ParentSettingsPage() {
         if (res.status === 409) {
           setAddError("이미 사용 중인 아이디입니다. 다른 아이디를 사용하세요.");
         } else {
-          setAddError(data.error || "구성원 추가에 실패했습니다.");
+          setAddError(data.error || "아이 추가에 실패했습니다.");
         }
         return;
       }
 
-      // 성공 시 리로드 및 리프레시
-      setShowAddForm(false);
+      setShowAddChildForm(false);
       await loadFamilyMembers();
       
-      // 스토어 자녀목록 갱신유도
       const { syncChildrenFromDB } = await import("@/lib/store");
       await syncChildrenFromDB();
+    } catch (err) {
+      setAddError("네트워크 에러가 발생했습니다.");
+    } finally {
+      setAddLoading(false);
+    }
+  };
+
+  const handleInviteParent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddError(null);
+
+    if (!inviteEmail.trim()) { setAddError("이메일을 입력해주세요."); return; }
+
+    setAddLoading(true);
+    try {
+      const res = await fetch(`/api/families/${store.activeFamilyId}/invite-member`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: inviteEmail.trim() })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 404) {
+          setAddError("가입된 사용자가 아니에요");
+        } else if (res.status === 403) {
+          setAddError("보호자는 최대 2명까지예요");
+        } else if (res.status === 409) {
+          setAddError("이미 초대했거나 이미 구성원이에요");
+        } else if (res.status === 400) {
+          setAddError("본인은 초대할 수 없어요");
+        } else {
+          setAddError(data.error || "초대에 실패했습니다. 다시 시도해 주세요.");
+        }
+        return;
+      }
+
+      setShowAddParentForm(false);
+      setInviteEmail("");
+      alert("성공적으로 초대를 보냈습니다!");
+      await loadFamilyMembers();
     } catch (err) {
       setAddError("네트워크 에러가 발생했습니다.");
     } finally {
@@ -407,24 +441,23 @@ export default function ParentSettingsPage() {
           
           {/* 왼쪽 열 */}
           <div className="flex flex-col gap-5">
-            {/* 가족 구성원 관리 */}
+            {/* 우리 아이 관리 */}
             <div>
-              <SectionHeader title="가족 구성원 관리" />
-              <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: "var(--hb-shadow)" }}>
+              <SectionHeader title="우리 아이" />
+              <div className="bg-white rounded-2xl overflow-hidden mb-5" style={{ boxShadow: "var(--hb-shadow)" }}>
                 {loadingMembers ? (
-                  <p className="text-xs text-center py-6 text-gray-400">구성원 정보를 불러오는 중...</p>
-                ) : familyMembers.length === 0 ? (
-                  /* 빈 상태 (empty state) */
+                  <p className="text-xs text-center py-6 text-gray-400">아이 정보를 불러오는 중...</p>
+                ) : familyMembers.filter((m) => m.role === "child").length === 0 ? (
                   <div className="text-center py-8 px-4">
-                    <p className="text-3xl mb-1">🏡</p>
-                    <p className="text-sm font-semibold text-gray-500">등록된 가족 구성원이 없습니다</p>
+                    <p className="text-3xl mb-1">🧒</p>
+                    <p className="text-sm font-semibold text-gray-500">등록된 아이가 없어요</p>
                     <p className="text-xs text-gray-400 mt-1 leading-relaxed">
-                      배우자나 자녀 계정을 생성해 보세요.
+                      아이 계정을 생성하여 케이와 대화를 시작해 보세요.
                     </p>
                   </div>
                 ) : (
                   <div className="flex flex-col">
-                    {familyMembers.map((m, i) => (
+                    {familyMembers.filter((m) => m.role === "child").map((m) => (
                       <div
                         key={m.memberId}
                         className="flex items-center justify-between px-4 py-3.5 border-b border-gray-100 last:border-0"
@@ -434,19 +467,112 @@ export default function ParentSettingsPage() {
                             className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0"
                             style={{ background: "var(--hb-primary-light)" }}
                           >
-                            {m.role === "child" ? "🧒" : "👩‍💼"}
+                            🧒
                           </div>
                           <div>
                             <p className="text-sm font-semibold text-gray-900">
                               {m.displayName}
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-1.5" style={{ background: "#EDEDFC", color: "#5B5BD6" }}>
-                                {m.role === "child" ? "자녀" : "배우자"}
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-1.5 bg-gray-100 text-gray-500">
+                                {m.grade}
                               </span>
                             </p>
                             <p className="text-xs text-gray-400">아이디: {m.username}</p>
                           </div>
                         </div>
-                        {isOwner && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => openEdit({
+                              id: m.childId,
+                              name: m.displayName,
+                              grade: m.grade,
+                              interests: m.interests
+                            })}
+                            className="text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-gray-50 text-gray-600 active:scale-95 transition-all cursor-pointer hover:bg-gray-100"
+                          >
+                            수정
+                          </button>
+                          {isOwner && (
+                            <button
+                              onClick={() => {
+                                setResettingMember(m);
+                                setNewResetPassword("");
+                                setResetError(null);
+                                setResetSuccess(false);
+                              }}
+                              className="text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-red-50 text-red-600 active:scale-95 transition-all cursor-pointer hover:bg-red-100"
+                            >
+                              비밀번호 초기화
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {isOwner && (
+                  <button
+                    onClick={() => {
+                      setAddError(null);
+                      setAddName("");
+                      setAddUsername("");
+                      setAddPassword("");
+                      setAddChildInterests([]);
+                      setAddChildConsent(false);
+                      setShowAddChildForm(true);
+                    }}
+                    className="flex items-center justify-center gap-2 px-4 py-3.5 w-full active:bg-gray-50 transition-colors border-t border-gray-100 text-sm font-semibold cursor-pointer"
+                    style={{ color: "var(--hb-primary)" }}
+                  >
+                    <span className="text-lg">+</span>
+                    아이 추가하기
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 보호자 관리 */}
+            <div>
+              <SectionHeader title="보호자" />
+              <div className="bg-white rounded-2xl overflow-hidden mb-5" style={{ boxShadow: "var(--hb-shadow)" }}>
+                {loadingMembers ? (
+                  <p className="text-xs text-center py-6 text-gray-400">보호자 정보를 불러오는 중...</p>
+                ) : familyMembers.filter((m) => m.role !== "child").length === 0 ? (
+                  <div className="text-center py-8 px-4">
+                    <p className="text-3xl mb-1">👩‍💼</p>
+                    <p className="text-sm font-semibold text-gray-500">등록된 보호자가 없습니다</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col">
+                    {familyMembers.filter((m) => m.role !== "child").map((m) => (
+                      <div
+                        key={m.memberId}
+                        className="flex items-center justify-between px-4 py-3.5 border-b border-gray-100 last:border-0"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0"
+                            style={{ background: "var(--hb-primary-light)" }}
+                          >
+                            👩‍💼
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {m.displayName}
+                              {m.role === "owner_parent" ? (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-1.5 bg-blue-100 text-blue-600">
+                                  오너
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-1.5 bg-purple-100 text-purple-600">
+                                  배우자
+                                </span>
+                              )}
+                            </p>
+                            <p className="text-xs text-gray-400">아이디: {m.username}</p>
+                          </div>
+                        </div>
+                        {!m.isMe && isOwner && (
                           <button
                             onClick={() => {
                               setResettingMember(m);
@@ -465,22 +591,23 @@ export default function ParentSettingsPage() {
                 )}
 
                 {isOwner && (
-                  <button
-                    onClick={() => {
-                      setShowAddForm(true);
-                      setAddError(null);
-                      setAddName("");
-                      setAddUsername("");
-                      setAddPassword("");
-                      setAddChildInterests([]);
-                      setAddChildConsent(false);
-                    }}
-                    className="flex items-center justify-center gap-2 px-4 py-3.5 w-full active:bg-gray-50 transition-colors border-t border-gray-100 text-sm font-semibold cursor-pointer"
-                    style={{ color: "var(--hb-primary)" }}
-                  >
-                    <span className="text-lg">+</span>
-                    가족 구성원 추가하기
-                  </button>
+                  <>
+                    <button
+                      onClick={() => {
+                        setAddError(null);
+                        setInviteEmail("");
+                        setShowAddParentForm(true);
+                      }}
+                      className="flex items-center justify-center gap-2 px-4 py-3.5 w-full active:bg-gray-50 transition-colors border-t border-gray-100 text-sm font-semibold cursor-pointer"
+                      style={{ color: "var(--hb-primary)" }}
+                    >
+                      <span className="text-lg">+</span>
+                      보호자 초대하기
+                    </button>
+                    <p className="text-[11px] text-gray-400 text-center py-2 bg-gray-50/50 border-t border-gray-100">
+                      배우자가 직접 신청할 수도, 여기서 이메일로 초대할 수도 있어요
+                    </p>
+                  </>
                 )}
               </div>
             </div>
@@ -490,6 +617,9 @@ export default function ParentSettingsPage() {
               <div>
                 <SectionHeader title="가족 구성원 승인 대기" />
                 <div className="bg-white rounded-2xl overflow-hidden p-4 flex flex-col gap-3 mb-5" style={{ boxShadow: "var(--hb-shadow)" }}>
+                  <p className="text-[11px] text-gray-400 leading-relaxed border-b border-gray-100 pb-2">
+                    배우자가 가족 참여 신청을 보낸 경우 아래에 나타납니다. 승인하면 우리 가족으로 즉시 합류합니다.
+                  </p>
                   {loadingRequests ? (
                     <p className="text-xs text-center py-4 text-gray-400">신청 정보를 불러오는 중...</p>
                   ) : joinRequests.length === 0 ? (
@@ -771,13 +901,13 @@ export default function ParentSettingsPage() {
         </>
       )}
 
-      {/* ── 구성원 추가 바텀 시트 ─────────────────────────────────────── */}
-      {showAddForm && (
+      {/* ── 우리 아이 추가 바텀 시트 ─────────────────────────────────────── */}
+      {showAddChildForm && (
         <>
           {/* 오버레이 */}
           <div
             className="fixed inset-0 z-[110] bg-black/40"
-            onClick={() => setShowAddForm(false)}
+            onClick={() => setShowAddChildForm(false)}
           />
 
           {/* 시트 */}
@@ -789,11 +919,11 @@ export default function ParentSettingsPage() {
             <div className="w-10 h-1 rounded-full bg-gray-200 mx-auto mb-4" />
 
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-bold text-gray-900">가족 구성원 추가</h2>
-              <button onClick={() => setShowAddForm(false)} className="text-gray-400 text-xl leading-none">✕</button>
+              <h2 className="text-base font-bold text-gray-900">아이 계정 추가 🧒</h2>
+              <button onClick={() => setShowAddChildForm(false)} className="text-gray-400 text-xl leading-none">✕</button>
             </div>
 
-            <form onSubmit={handleAddMember} className="flex flex-col gap-4">
+            <form onSubmit={handleAddChild} className="flex flex-col gap-4">
               {/* 이름 */}
               <div>
                 <label className="block text-xs font-bold mb-1.5 text-gray-700">이름</label>
@@ -840,69 +970,64 @@ export default function ParentSettingsPage() {
                 />
               </div>
 
-              {/* 자녀인 경우 전용 폼 */}
-              {addRole === "child" && (
-                <>
-                  {/* 학년 */}
-                  <div>
-                    <label className="block text-xs font-bold mb-1.5 text-gray-700">학년</label>
-                    <div className="flex gap-2 flex-wrap">
-                      {GRADES.map((g) => (
-                        <button
-                          key={g}
-                          type="button"
-                          onClick={() => setAddChildGrade(g)}
-                          className="px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer"
-                          style={
-                            addChildGrade === g
-                              ? { background: "var(--hb-primary)", color: "#fff" }
-                              : { background: "#F3F4F6", color: "#374151" }
-                          }
-                        >
-                          {g}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+              {/* 학년 */}
+              <div>
+                <label className="block text-xs font-bold mb-1.5 text-gray-700">학년</label>
+                <div className="flex gap-2 flex-wrap">
+                  {GRADES.map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setAddChildGrade(g)}
+                      className="px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer"
+                      style={
+                        addChildGrade === g
+                          ? { background: "var(--hb-primary)", color: "#fff" }
+                          : { background: "#F3F4F6", color: "#374151" }
+                      }
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-                  {/* 관심사 */}
-                  <div>
-                    <label className="block text-xs font-bold mb-1.5 text-gray-700">관심사</label>
-                    <div className="flex gap-2 flex-wrap">
-                      {INTERESTS.map((item) => (
-                        <button
-                          key={item}
-                          type="button"
-                          onClick={() => toggleAddInterest(item)}
-                          className="px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer"
-                          style={
-                            addChildInterests.includes(item)
-                              ? { background: "var(--hb-primary)", color: "#fff" }
-                              : { background: "#F3F4F6", color: "#374151" }
-                          }
-                        >
-                          {item}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+              {/* 관심사 */}
+              <div>
+                <label className="block text-xs font-bold mb-1.5 text-gray-700">관심사</label>
+                <div className="flex gap-2 flex-wrap">
+                  {INTERESTS.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => toggleAddInterest(item)}
+                      className="px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer"
+                      style={
+                        addChildInterests.includes(item)
+                          ? { background: "var(--hb-primary)", color: "#fff" }
+                          : { background: "#F3F4F6", color: "#374151" }
+                      }
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-                  {/* 법정대리인 동의 */}
-                  <div className="flex items-start gap-3 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                    <input
-                      type="checkbox"
-                      id="addChildConsent"
-                      checked={addChildConsent}
-                      onChange={(e) => setAddChildConsent(e.target.checked)}
-                      className="w-4 h-4 accent-[var(--hb-primary)] rounded cursor-pointer mt-0.5"
-                    />
-                    <label htmlFor="addChildConsent" className="text-[11px] text-gray-600 leading-relaxed cursor-pointer select-none">
-                      <span className="font-bold text-gray-800">[필수] 법정대리인 동의</span>
-                      <br />본인은 자녀의 법정대리인으로서 자녀의 오디오 서비스 가입 및 개인정보 수집에 동의합니다.
-                    </label>
-                  </div>
-                </>
-              )}
+              {/* 법정대리인 동의 */}
+              <div className="flex items-start gap-3 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                <input
+                  type="checkbox"
+                  id="addChildConsent"
+                  checked={addChildConsent}
+                  onChange={(e) => setAddChildConsent(e.target.checked)}
+                  className="w-4 h-4 accent-[var(--hb-primary)] rounded cursor-pointer mt-0.5"
+                />
+                <label htmlFor="addChildConsent" className="text-[11px] text-gray-600 leading-relaxed cursor-pointer select-none">
+                  <span className="font-bold text-gray-800">[필수] 법정대리인 동의</span>
+                  <br />본인은 자녀의 법정대리인으로서 자녀의 오디오 서비스 가입 및 개인정보 수집에 동의합니다.
+                </label>
+              </div>
 
               {addError && (
                 <p className="text-xs text-red-500 bg-red-50 px-3 py-2.5 rounded-xl font-medium text-center">
@@ -916,7 +1041,68 @@ export default function ParentSettingsPage() {
                 className="w-full py-3.5 rounded-2xl font-bold text-white transition-opacity disabled:opacity-40 mt-2 cursor-pointer"
                 style={{ background: "var(--hb-primary)" }}
               >
-                {addLoading ? "추가하는 중..." : "구성원 추가 완료"}
+                {addLoading ? "추가하는 중..." : "아이 계정 추가 완료"}
+              </button>
+            </form>
+          </div>
+        </>
+      )}
+
+      {/* ── 보호자 추가 바텀 시트 (이메일 초대) ─────────────────────────────── */}
+      {showAddParentForm && (
+        <>
+          {/* 오버레이 */}
+          <div
+            className="fixed inset-0 z-[110] bg-black/40"
+            onClick={() => setShowAddParentForm(false)}
+          />
+
+          {/* 시트 */}
+          <div
+            className="fixed bottom-0 left-0 right-0 z-[120] bg-white rounded-t-3xl px-5 pt-5 pb-10 md:max-w-[420px] md:mx-auto md:left-1/2 md:-translate-x-1/2 max-h-[85vh] overflow-y-auto"
+            style={{ boxShadow: "0 -4px 32px rgba(0,0,0,0.12)" }}
+          >
+            {/* 시트 핸들 */}
+            <div className="w-10 h-1 rounded-full bg-gray-200 mx-auto mb-4" />
+
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-bold text-gray-900">보호자 초대하기 👩‍💼</h2>
+              <button onClick={() => setShowAddParentForm(false)} className="text-gray-400 text-xl leading-none">✕</button>
+            </div>
+
+            <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+              이미 가입된 배우자(보호자)의 이메일 주소를 입력해 초대장을 보내세요. 배우자가 초대를 수락하면 즉시 가족으로 합류합니다.
+            </p>
+
+            <form onSubmit={handleInviteParent} className="flex flex-col gap-4">
+              {/* 이메일 */}
+              <div>
+                <label className="block text-xs font-bold mb-1.5 text-gray-700">이메일 주소</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="초대할 보호자의 이메일 (예: partner@example.com)"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  className="w-full px-4 py-3 rounded-2xl bg-gray-50 text-sm outline-none border-2 border-transparent transition-colors"
+                  onFocus={(e) => (e.target.style.borderColor = "var(--hb-primary)")}
+                  onBlur={(e) => (e.target.style.borderColor = "transparent")}
+                />
+              </div>
+
+              {addError && (
+                <p className="text-xs text-red-500 bg-red-50 px-3 py-2.5 rounded-xl font-medium text-center">
+                  {addError}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={addLoading}
+                className="w-full py-3.5 rounded-2xl font-bold text-white transition-opacity disabled:opacity-40 mt-2 cursor-pointer"
+                style={{ background: "var(--hb-primary)" }}
+              >
+                {addLoading ? "초대장 보내는 중..." : "초대장 보내기 →"}
               </button>
             </form>
           </div>

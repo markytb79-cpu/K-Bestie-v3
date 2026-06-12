@@ -40,10 +40,12 @@ export async function GET(
     return NextResponse.json({ error: "status는 pending|approved|rejected|all 중 하나여야 합니다." }, { status: 400 });
   }
 
+  // 오너 inbox = 배우자가 신청한 member_request만 표시
   let query = svc
     .from("family_join_requests")
     .select("id, requester_user_id, requester_email, status, created_at, reviewed_at")
     .eq("family_id", familyId)
+    .eq("direction", "member_request")
     .order("created_at", { ascending: false });
 
   if (statusParam !== "all") {

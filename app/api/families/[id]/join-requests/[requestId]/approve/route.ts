@@ -39,12 +39,13 @@ export async function POST(
     return NextResponse.json({ error: "가족을 찾을 수 없거나 오너 권한이 없습니다." }, { status: 403 });
   }
 
-  // ── 신청 조회 ───────────────────────────────────────────────────────
+  // ── 신청 조회 (member_request 방향만 오너가 승인 가능) ────────────
   const { data: request } = await svc
     .from("family_join_requests")
-    .select("id, family_id, requester_user_id, status")
+    .select("id, family_id, requester_user_id, status, direction")
     .eq("id", requestId)
     .eq("family_id", familyId)
+    .eq("direction", "member_request")
     .maybeSingle();
 
   if (!request) {
