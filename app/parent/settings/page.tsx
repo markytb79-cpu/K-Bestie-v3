@@ -201,7 +201,7 @@ export default function ParentSettingsPage() {
       const res = await fetch(`/api/families/${store.activeFamilyId}/sent-invites?status=pending`);
       if (res.ok) {
         const data = await res.json();
-        setSentInvites(data.requests ?? data.invitations ?? []);
+        setSentInvites(data.invites ?? []);
       }
     } catch (err) {
       console.error(err);
@@ -574,10 +574,10 @@ export default function ParentSettingsPage() {
 
             {/* (a) 함께하는 보호자 목록 */}
             <div>
-              <SectionHeader title="함께하는 보호자 목록" />
+              <SectionHeader title="가족 구성원 (이미 합류한 보호자)" />
               <div className="bg-white rounded-2xl overflow-hidden mb-5" style={{ boxShadow: "var(--hb-shadow)" }}>
                 <p className="text-[11px] text-gray-400 leading-relaxed border-b border-gray-100 p-4 pb-2">
-                  현재 우리 가족의 아이들을 함께 돌보고 있는 보호자 목록입니다. 오너는 새로운 보호자를 초대하거나 가족 설정을 변경할 수 있습니다.
+                  현재 자녀 양육을 함께 돌보고 있는 가족 내 보호자 목록입니다. (오너 포함)
                 </p>
                 {loadingMembers ? (
                   <p className="text-xs text-center py-6 text-gray-400">보호자 정보를 불러오는 중...</p>
@@ -656,10 +656,10 @@ export default function ParentSettingsPage() {
             {/* (b) 내가 보낸 초대 (수락 대기) */}
             {isOwner && (
               <div>
-                <SectionHeader title="내가 보낸 초대 (수락 대기)" />
+                <SectionHeader title="내가 보낸 배우자 초대 (수락 대기)" />
                 <div className="bg-white rounded-2xl overflow-hidden mb-5 p-4 flex flex-col gap-3" style={{ boxShadow: "var(--hb-shadow)" }}>
                   <p className="text-[11px] text-gray-400 leading-relaxed border-b border-gray-100 pb-2">
-                    배우자에게 보낸 이메일 초대장입니다. 상대방이 수락하면 우리 가족으로 즉시 합류합니다.
+                    가족 오너로서 배우자에게 이메일로 전송한 초대장입니다. 상대방이 수락하면 즉시 우리 가족으로 합류합니다.
                   </p>
                   {loadingSentInvites ? (
                     <p className="text-xs text-center py-4 text-gray-400">초대 정보를 불러오는 중...</p>
@@ -694,10 +694,10 @@ export default function ParentSettingsPage() {
               </div>
             )}
 
-            {/* (c) 가족 구성원 승인 대기 */}
+            {/* (c) 받은 가족 참여 신청 (승인 대기) */}
             {isOwner && (
               <div>
-                <SectionHeader title="가족 구성원 신청 대기 (가입 신청)" />
+                <SectionHeader title="받은 가족 참여 신청 (승인 대기)" />
                 <div className="bg-white rounded-2xl overflow-hidden p-4 flex flex-col gap-3 mb-5" style={{ boxShadow: "var(--hb-shadow)" }}>
                   <p className="text-[11px] text-gray-400 leading-relaxed border-b border-gray-100 pb-2">
                     배우자가 직접 우리 가족을 찾아서 보낸 참여 신청 목록입니다. 승인 시 우리 가족에 바로 합류합니다.
@@ -1132,17 +1132,48 @@ export default function ParentSettingsPage() {
 
       {/* ── 보호자 초대 모달 (화면 중앙 오버레이) ─────────────────────────────── */}
       {showAddParentForm && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+        <div 
+          className="fixed inset-0 flex items-center justify-center p-4"
+          style={{
+            zIndex: 9999,
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "1rem",
+            boxSizing: "border-box"
+          }}
+        >
           {/* 반투명 어두운 배경 */}
           <div
             className="absolute inset-0 bg-black/50"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.5)"
+            }}
             onClick={() => setShowAddParentForm(false)}
           />
 
           {/* 모달 본체 */}
           <div
-            className="relative z-10 w-full max-w-[400px] bg-white rounded-3xl p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200"
-            style={{ maxHeight: "85vh", overflowY: "auto" }}
+            className="relative z-10 w-full max-w-[400px] bg-white rounded-3xl p-6 shadow-2xl flex flex-col gap-4"
+            style={{
+              position: "relative",
+              zIndex: 10,
+              width: "100%",
+              maxWidth: "400px",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              boxSizing: "border-box"
+            }}
           >
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-gray-900">보호자 초대하기 👩‍💼</h2>
