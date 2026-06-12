@@ -9,11 +9,38 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  // ── 인증: anon client로 로그인 사용자 확인 ───────────────────────
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data: family, error } = await supabase
+  const svc = createServiceClient();
+
+  // ── 권한 검증: 오너 또는 구성원인지 명시적으로 확인 ──────────────
+  const { data: fam } = await svc
+    .from("families")
+    .select("id, created_by")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (!fam) return NextResponse.json({ error: "가족을 찾을 수 없습니다." }, { status: 404 });
+
+  const isOwner = fam.created_by === user.id;
+  if (!isOwner) {
+    const { data: memberRow } = await svc
+      .from("family_members")
+      .select("id")
+      .eq("family_id", id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (!memberRow) {
+      return NextResponse.json({ error: "접근 권한이 없습니다." }, { status: 403 });
+    }
+  }
+
+  // ── 데이터 조회: service client로 RLS 없이 전체 조회 ─────────────
+  const { data: family, error } = await svc
     .from("families")
     .select(`
       id, name, created_by, created_at,
@@ -23,8 +50,33 @@ export async function GET(
     .eq("id", id)
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 404 });
-  return NextResponse.json({ family });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // ── 소셜 보호자 이름: parents.name 조인 (member_accounts 없는 경우 대비) ──
+  const parentUserIds = ((family.family_members ?? []) as Array<{ user_id: string; role: string }>)
+    .filter((m) => m.role === "owner_parent" || m.role === "parent")
+    .map((m) => m.user_id)
+    .filter(Boolean);
+
+  let parentsNameMap: Record<string, string> = {};
+  if (parentUserIds.length > 0) {
+    const { data: parentRows } = await svc
+      .from("parents")
+      .select("id, name")
+      .in("id", parentUserIds);
+    parentsNameMap = Object.fromEntries(
+      ((parentRows ?? []) as Array<{ id: string; name: string }>).map((p) => [p.id, p.name])
+    );
+  }
+
+  const membersWithParentName = ((family.family_members ?? []) as Array<Record<string, unknown>>).map((m) => ({
+    ...m,
+    parent_name: (m.role === "owner_parent" || m.role === "parent")
+      ? (parentsNameMap[m.user_id as string] ?? null)
+      : null,
+  }));
+
+  return NextResponse.json({ family: { ...family, family_members: membersWithParentName } });
 }
 
 // PATCH /api/families/[id] — 가족 이름 수정 (오너만)
