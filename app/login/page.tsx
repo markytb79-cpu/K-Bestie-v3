@@ -109,7 +109,7 @@ function LoginContent() {
 
         {/* ── 오너 소셜 로그인 섹션 ── */}
         <div className="flex flex-col gap-2.5">
-          <p className="text-xs font-bold text-gray-500 mb-1 px-1">가족 오너 로그인 (보호자)</p>
+          <p className="text-xs font-bold text-gray-500 mb-1 px-1">보호자 로그인</p>
           
           <button
             onClick={() => handleOAuthLogin("kakao")}
@@ -166,14 +166,14 @@ function LoginContent() {
 
         {/* ── 구성원 일반 로그인 섹션 ── */}
         <form onSubmit={handleMemberLogin} className="flex flex-col gap-3">
-          <p className="text-xs font-bold text-gray-500 mb-1 px-1">가족 구성원 로그인 (배우자·아이)</p>
+          <p className="text-xs font-bold text-gray-500 mb-1 px-1">아이 로그인</p>
           
           <div>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="아이디를 입력하세요"
+              placeholder="아이 아이디를 입력하세요"
               disabled={isLoading}
               className="w-full rounded-xl px-4 py-3 text-sm border-2 border-transparent outline-none transition-colors"
               style={{ background: "#F9FAF6", border: "1px solid rgba(26,107,90,0.12)" }}
@@ -209,7 +209,7 @@ function LoginContent() {
 
       <div className="mt-8 text-center">
         <p className="text-xs text-gray-400">
-          오너가 먼저 구성원 계정을 발급해 주어야 로그인할 수 있습니다.
+          오너가 먼저 아이 계정을 발급해 주어야 로그인할 수 있어요.
         </p>
       </div>
     </div>
