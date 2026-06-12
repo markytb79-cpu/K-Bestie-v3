@@ -90,6 +90,12 @@ export default function ParentSettingsPage() {
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(true);
 
+  // 닉네임 수정 상태
+  const [nicknameInput, setNicknameInput] = useState("");
+  const [savingNickname, setSavingNickname] = useState(false);
+  const [nicknameError, setNicknameError] = useState<string | null>(null);
+  const [nicknameSuccess, setNicknameSuccess] = useState(false);
+
   // 로그인 이메일 및 구성원 정보 로드
   useEffect(() => {
     setMounted(true);
@@ -97,6 +103,16 @@ export default function ParentSettingsPage() {
     supabase.auth.getUser().then(({ data }) => {
       if (data.user?.email) setUserEmail(data.user.email);
     }).catch(() => {});
+
+    // 보호자 정보 로드
+    fetch("/api/parents/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.parent?.name) {
+          setNicknameInput(data.parent.name);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -146,11 +162,16 @@ export default function ParentSettingsPage() {
           ? family.child_profiles?.find((c: any) => c.member_id === m.id)
           : null;
         
-        let dispName = m.role === "child" 
-          ? (childProf?.name || "") 
-          : (acc?.display_name || "");
-
-        if (!dispName && acc?.display_name) dispName = acc.display_name;
+        let dispName = "";
+        if (m.role === "child") {
+          dispName = childProf?.name || "";
+        } else {
+          if (acc) {
+            dispName = acc.display_name || "";
+          } else {
+            dispName = m.parent_name || "";
+          }
+        }
 
         return {
           memberId: m.id, // family_members.id
@@ -451,6 +472,40 @@ export default function ParentSettingsPage() {
       setResetError("네트워크 에러가 발생했습니다.");
     } finally {
       setResetLoading(false);
+    }
+  };
+
+  const isNicknameInvalid = !nicknameInput || nicknameInput.trim().length === 0 || nicknameInput.length > 30;
+
+  const handleSaveNickname = async () => {
+    if (isNicknameInvalid) return;
+    setSavingNickname(true);
+    setNicknameError(null);
+    setNicknameSuccess(false);
+
+    try {
+      const res = await fetch("/api/parents/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nicknameInput.trim() }),
+      });
+
+      if (res.ok) {
+        setNicknameSuccess(true);
+        // 성공 시 구성원 목록도 갱신
+        await loadFamilyMembers();
+      } else {
+        if (res.status === 400) {
+          setNicknameError("닉네임은 1~30자로 입력해 주세요");
+        } else {
+          const data = await res.json().catch(() => null);
+          setNicknameError(data?.error || "닉네임 변경에 실패했습니다.");
+        }
+      }
+    } catch {
+      setNicknameError("네트워크 에러가 발생했습니다.");
+    } finally {
+      setSavingNickname(false);
     }
   };
 
@@ -817,6 +872,50 @@ export default function ParentSettingsPage() {
                     {userEmail ?? "로딩 중..."}
                   </p>
                 </div>
+
+                <div
+                  className="flex flex-col px-4 py-3.5 border-b border-gray-100 bg-gray-50/10"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-gray-700">닉네임</p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={nicknameInput}
+                        onChange={(e) => {
+                          setNicknameInput(e.target.value);
+                          setNicknameError(null);
+                          setNicknameSuccess(false);
+                        }}
+                        placeholder="이름/닉네임"
+                        maxLength={40}
+                        className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none text-right focus:border-[var(--hb-primary)] w-40"
+                      />
+                      <button
+                        onClick={handleSaveNickname}
+                        disabled={isNicknameInvalid || savingNickname}
+                        className="px-3 py-1.5 text-xs font-bold rounded-xl text-white disabled:opacity-40 transition-opacity cursor-pointer shrink-0"
+                        style={{ backgroundColor: "var(--hb-primary)" }}
+                      >
+                        {savingNickname ? "저장..." : "변경"}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1.5 leading-normal">
+                    다른 가족 구성원에게 보이는 이름이에요.
+                  </p>
+                  {nicknameError && (
+                    <p className="text-[10px] text-red-500 font-semibold mt-1">
+                      {nicknameError}
+                    </p>
+                  )}
+                  {nicknameSuccess && (
+                    <p className="text-[10px] text-green-600 font-semibold mt-1">
+                      닉네임이 성공적으로 변경되었습니다.
+                    </p>
+                  )}
+                </div>
+
                 <div className="flex items-center justify-between px-4 py-3.5">
                   <p className="text-sm font-medium text-gray-700">플랜</p>
                   <p className="text-sm font-semibold" style={{ color: "var(--hb-muted)" }}>무료</p>

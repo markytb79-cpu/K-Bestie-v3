@@ -50,6 +50,7 @@ export default function ParentHomePage() {
   const unreadCount = store.notifications.filter((n) => !n.read).length;
 
   const [mounted, setMounted] = useState(false);
+  const [parentName, setParentName] = useState<string>("보호자");
   const [activeIdx, setActiveIdx] = useState(0);
   const [latestReport, setLatestReport] = useState<Report | null>(null);
   const [reportCount, setReportCount] = useState(0);
@@ -150,6 +151,14 @@ export default function ParentHomePage() {
 
   useEffect(() => {
     setMounted(true);
+    fetch("/api/parents/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.parent?.name) {
+          setParentName(data.parent.name);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -287,7 +296,7 @@ export default function ParentHomePage() {
             </div>
           )}
         </div>
-        <h1 className="text-[17px] font-bold text-gray-900 mt-0.5">안녕하세요, 보호자님 👋</h1>
+        <h1 className="text-[17px] font-bold text-gray-900 mt-0.5">안녕하세요, {parentName}님 👋</h1>
       </div>
       <Link href="/parent/notifications" className="relative p-2 -mr-1">
         <BellSvg />
@@ -318,7 +327,7 @@ export default function ParentHomePage() {
           <div className="bg-white px-5 pt-12 pb-4 flex items-center justify-between">
             <div>
               <p className="text-xs font-medium" style={{ color: "var(--hb-muted)" }}>내친구 케이</p>
-              <h1 className="text-[17px] font-bold text-gray-900 mt-0.5">안녕하세요, 보호자님 👋</h1>
+              <h1 className="text-[17px] font-bold text-gray-900 mt-0.5">안녕하세요, {parentName}님 👋</h1>
             </div>
           </div>
           <div className="max-w-md mx-auto px-5 py-14 flex flex-col items-center text-center gap-6">
@@ -354,7 +363,7 @@ export default function ParentHomePage() {
         <div className="bg-white px-5 pt-12 pb-4 flex items-center justify-between">
           <div>
             <p className="text-xs font-medium" style={{ color: "var(--hb-muted)" }}>내친구 케이</p>
-            <h1 className="text-[17px] font-bold text-gray-900 mt-0.5">안녕하세요, 보호자님 👋</h1>
+            <h1 className="text-[17px] font-bold text-gray-900 mt-0.5">안녕하세요, {parentName}님 👋</h1>
           </div>
         </div>
 
