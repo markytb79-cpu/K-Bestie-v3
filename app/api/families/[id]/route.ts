@@ -52,20 +52,24 @@ export async function GET(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // ── 소셜 보호자 이름: parents.name 조인 (member_accounts 없는 경우 대비) ──
+  // ── 소셜 보호자 이름 & 이메일: parents 조인 (member_accounts 없는 경우 대비) ──
   const parentUserIds = ((family.family_members ?? []) as Array<{ user_id: string; role: string }>)
     .filter((m) => m.role === "owner_parent" || m.role === "parent")
     .map((m) => m.user_id)
     .filter(Boolean);
 
   let parentsNameMap: Record<string, string> = {};
+  let parentsEmailMap: Record<string, string> = {};
   if (parentUserIds.length > 0) {
     const { data: parentRows } = await svc
       .from("parents")
-      .select("id, name")
+      .select("id, name, email")
       .in("id", parentUserIds);
     parentsNameMap = Object.fromEntries(
       ((parentRows ?? []) as Array<{ id: string; name: string }>).map((p) => [p.id, p.name])
+    );
+    parentsEmailMap = Object.fromEntries(
+      ((parentRows ?? []) as Array<{ id: string; email: string }>).map((p) => [p.id, p.email])
     );
   }
 
@@ -73,6 +77,9 @@ export async function GET(
     ...m,
     parent_name: (m.role === "owner_parent" || m.role === "parent")
       ? (parentsNameMap[m.user_id as string] ?? null)
+      : null,
+    parent_email: (m.role === "owner_parent" || m.role === "parent")
+      ? (parentsEmailMap[m.user_id as string] ?? null)
       : null,
   }));
 

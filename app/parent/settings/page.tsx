@@ -183,7 +183,8 @@ export default function ParentSettingsPage() {
           isMe: m.user_id === user.id,
           childId: childProf?.id || "",
           grade: childProf?.grade || "",
-          interests: childProf?.interests || []
+          interests: childProf?.interests || [],
+          parentEmail: m.parent_email || ""
         };
       });
 
@@ -475,6 +476,24 @@ export default function ParentSettingsPage() {
     }
   };
 
+  const handleRemoveMember = async (member: any) => {
+    const ok = window.confirm(`${member.displayName}님을 가족에서 제거할까요?`);
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/families/${store.activeFamilyId}/members/${member.memberId}/remove`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        await loadFamilyMembers();
+      } else {
+        const data = await res.json();
+        alert(data.error || "제거에 실패했습니다.");
+      }
+    } catch {
+      alert("네트워크 에러가 발생했습니다.");
+    }
+  };
+
   const isNicknameInvalid = !nicknameInput || nicknameInput.trim().length === 0 || nicknameInput.length > 30;
 
   const handleSaveNickname = async () => {
@@ -668,20 +687,19 @@ export default function ParentSettingsPage() {
                                 </span>
                               )}
                             </p>
-                            <p className="text-xs text-gray-400">아이디: {m.username}</p>
+                            {m.username ? (
+                              <p className="text-xs text-gray-400">아이디: {m.username}</p>
+                            ) : (
+                              <p className="text-xs text-gray-400">이메일: {m.parentEmail || "정보 없음"}</p>
+                            )}
                           </div>
                         </div>
-                        {!m.isMe && isOwner && (
+                        {!m.isMe && isOwner && m.role === "parent" && (
                           <button
-                            onClick={() => {
-                              setResettingMember(m);
-                              setNewResetPassword("");
-                              setResetError(null);
-                              setResetSuccess(false);
-                            }}
+                            onClick={() => handleRemoveMember(m)}
                             className="text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-red-50 text-red-600 active:scale-95 transition-all cursor-pointer hover:bg-red-100"
                           >
-                            비밀번호 초기화
+                            제거
                           </button>
                         )}
                       </div>
@@ -690,7 +708,13 @@ export default function ParentSettingsPage() {
                 )}
 
                 {isOwner && (
-                  <>
+                  familyMembers.filter((m) => m.role !== "child").length >= 2 ? (
+                    <div className="px-4 py-4 text-center border-t border-gray-100 bg-gray-50/30">
+                      <p className="text-xs text-gray-400 font-medium">
+                        보호자는 최대 2명까지 등록할 수 있어요.
+                      </p>
+                    </div>
+                  ) : (
                     <button
                       onClick={() => {
                         setAddError(null);
@@ -703,7 +727,7 @@ export default function ParentSettingsPage() {
                       <span className="text-lg">+</span>
                       보호자 초대하기
                     </button>
-                  </>
+                  )
                 )}
               </div>
             </div>
