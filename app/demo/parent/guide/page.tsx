@@ -50,15 +50,31 @@ export default function DemoParentGuidePage() {
           ))}
         </div>
 
-        <div className="shrink-0 px-4 pb-4">
+        {/* 하단 버튼 바 — 아이 대화 화면과 동일 */}
+        <div className="flex items-center justify-center gap-8 py-5">
+          <button
+            disabled
+            className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg opacity-50 cursor-not-allowed"
+            aria-label="텍스트로 대화하기"
+          >
+            💬
+          </button>
           <button
             onClick={handleNext}
             disabled={isDone}
-            className="w-full py-3.5 rounded-2xl font-bold text-sm text-white shadow-sm transition-transform active:scale-[0.98] disabled:opacity-40 cursor-pointer"
+            className="w-16 h-16 rounded-full flex items-center justify-center text-2xl text-white shadow-md transition-transform active:scale-95 disabled:opacity-40 cursor-pointer"
             style={{ background: "#e8845a" }}
+            aria-label="마이크로 대화하기"
           >
-            {isDone ? "대화가 모두 끝났어요" : "다음 이야기 이어보기"}
+            🎤
           </button>
+          <Link
+            href="/demo/parent"
+            className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg"
+            aria-label="닫기"
+          >
+            ✕
+          </Link>
         </div>
 
         <ParentNav />
