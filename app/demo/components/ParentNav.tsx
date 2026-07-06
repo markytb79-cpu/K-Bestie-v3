@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const NAV_ITEMS = [
   { icon: "🏠", label: "홈", href: "/demo/parent" },
   { icon: "📄", label: "리포트", href: "/demo/parent/report" },
-  { icon: "💬", label: "케이와 대화", href: "/demo/parent/report#guide" },
+  { icon: "💬", label: "케이와 대화", href: "/demo/parent/guide" },
   { icon: "⚙️", label: "설정", href: "/demo/parent/settings" },
 ];
 

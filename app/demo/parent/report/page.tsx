@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { DemoFrame } from "../../components/DemoFrame";
 import { useDemoView } from "../../components/DemoViewContext";
@@ -13,14 +13,12 @@ import {
   recommendedQuestions,
   watchOutChange,
   kayComment,
-  parentGuideScript,
 } from "../../lib/mockData";
 
 const TABS = [
   { id: 1, label: "한 줄 요약" },
   { id: 2, label: "상세 리포트" },
   { id: 3, label: "대화 실마리" },
-  { id: 4, label: "대화 가이드" },
 ];
 
 function QuoteCard() {
@@ -137,65 +135,14 @@ function Tab3() {
   );
 }
 
-function Tab4() {
-  const [visiblePairs, setVisiblePairs] = useState(1);
-  const isDone = visiblePairs >= parentGuideScript.length;
-
-  return (
-    <div>
-      <div className="text-center mb-4">
-        <p className="text-xs font-bold" style={{ color: "#1a6b5a" }}>
-          내친구 케이
-        </p>
-        <p className="text-[11px]" style={{ color: "#6b7280" }}>
-          AI 대화 가이드
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-4">
-        {parentGuideScript.slice(0, visiblePairs).map((pair, i) => (
-          <div key={i}>
-            <p className="text-sm font-bold mb-2" style={{ color: "#1e1e2d" }}>
-              {pair.question}
-            </p>
-            <div
-              className="rounded-2xl px-4 py-3 text-sm leading-relaxed"
-              style={{ background: "#fdf1ec", color: "#3a3a4a" }}
-            >
-              {pair.answer}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {!isDone && (
-        <button
-          onClick={() => setVisiblePairs((v) => v + 1)}
-          className="mt-5 w-full py-3 rounded-2xl font-bold text-sm text-white cursor-pointer"
-          style={{ background: "#e8845a" }}
-        >
-          다음 이야기 보기
-        </button>
-      )}
-    </div>
-  );
-}
-
 export default function DemoReportPage() {
   const { view } = useDemoView();
   const [activeTab, setActiveTab] = useState(1);
 
-  useEffect(() => {
-    if (window.location.hash === "#guide") {
-      setActiveTab(4);
-    }
-  }, []);
-
   const renderTab = () => {
     if (activeTab === 1) return <Tab1 />;
     if (activeTab === 2) return <Tab2 />;
-    if (activeTab === 3) return <Tab3 />;
-    return <Tab4 />;
+    return <Tab3 />;
   };
 
   return (
