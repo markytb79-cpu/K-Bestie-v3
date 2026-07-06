@@ -18,9 +18,7 @@ export default function DemoParentDashboardPage() {
           className="shrink-0 flex items-center justify-between px-4 py-4"
           style={{ background: "#fafaf8" }}
         >
-          <Link href="/demo" className="text-lg" style={{ color: "#1e1e2d" }}>
-            ☰
-          </Link>
+          <span className="w-5" />
           <Link
             href="/demo"
             className="font-bold text-sm cursor-pointer"
