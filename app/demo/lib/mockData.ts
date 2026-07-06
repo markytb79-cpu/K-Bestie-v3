@@ -91,3 +91,9 @@ export const parentGuideScript: GuidePair[] = [
       '"서아야, 요즘 그리고 싶은 그림이나 만들어보고 싶은 거 있어?" 이 문장으로 시작하면 오늘 대화 흐름과 잘 맞을 것 같아요.',
   },
 ];
+
+// 부모용 케이와 대화 화면 — 위 가이드 문답을 채팅 말풍선 순서(부모→케이→부모→케이…)로 펼친 것
+export const parentGuideTurns: ChatTurn[] = parentGuideScript.flatMap((pair) => [
+  { speaker: "child", text: pair.question },
+  { speaker: "kay", text: pair.answer },
+]);
