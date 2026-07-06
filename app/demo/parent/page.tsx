@@ -21,9 +21,13 @@ export default function DemoParentDashboardPage() {
           <Link href="/demo" className="text-lg" style={{ color: "#1e1e2d" }}>
             ☰
           </Link>
-          <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>
+          <Link
+            href="/demo"
+            className="font-bold text-sm cursor-pointer"
+            style={{ color: "#1a6b5a" }}
+          >
             내친구 케이
-          </span>
+          </Link>
           <Link href="/demo/parent/notifications" className="text-lg" aria-label="알림">
             🔔
           </Link>

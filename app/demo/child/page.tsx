@@ -33,9 +33,13 @@ export default function DemoChildPage() {
         {/* 상단 고정 영역: 헤더 + 마스코트 (스크롤되지 않음) */}
         <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
           <div className="flex items-center justify-center px-4 pt-4 pb-2">
-            <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>
+            <Link
+              href="/demo"
+              className="font-bold text-sm cursor-pointer"
+              style={{ color: "#1a6b5a" }}
+            >
               내친구 케이
-            </span>
+            </Link>
           </div>
 
           <div className="text-center pt-2 pb-4">
