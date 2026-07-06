@@ -1,140 +1,90 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { DemoFrame } from "../components/DemoFrame";
-import { childVoiceScript } from "../lib/mockData";
+import { ChildNav } from "../components/ChildNav";
 
-const INITIAL_VISIBLE = 2;
-
-const NAV_ITEMS = [
-  { icon: "🏠", label: "홈" },
-  { icon: "🎯", label: "미션" },
-  { icon: "💬", label: "대화" },
-  { icon: "🎮", label: "놀이" },
-  { icon: "⚙️", label: "설정" },
+const HOME_CARDS = [
+  {
+    icon: "🎯",
+    title: "미션 진행",
+    desc: "오늘의 미션을 시작해요",
+    href: "/demo/child/chat",
+    bg: "#22c55e",
+  },
+  {
+    icon: "💬",
+    title: "대화하기",
+    desc: "케이랑 이야기 나눠요",
+    href: "/demo/child/chat",
+    bg: "#e8845a",
+  },
+  {
+    icon: "🎮",
+    title: "케이와 놀이",
+    desc: "재미있는 놀이를 해봐요",
+    href: "/demo/child/play",
+    bg: "#2d9f8f",
+  },
 ];
 
-export default function DemoChildPage() {
-  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
-
-  const isDone = visibleCount >= childVoiceScript.length;
-  const visibleTurns = childVoiceScript.slice(0, visibleCount);
-
-  const handleMic = () => {
-    if (isDone) return;
-    setVisibleCount((c) => Math.min(c + 1, childVoiceScript.length));
-  };
-
+export default function DemoChildHomePage() {
   return (
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
-        {/* 상단 고정 영역: 헤더 + 마스코트 (스크롤되지 않음) */}
-        <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
-          <div className="flex items-center justify-center px-4 pt-4 pb-2">
-            <Link
-              href="/demo"
-              className="font-bold text-sm cursor-pointer"
-              style={{ color: "#1a6b5a" }}
-            >
-              내친구 케이
-            </Link>
-          </div>
-
-          <div className="text-center pt-2 pb-4">
-            <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
-              {isDone ? "오늘도 이야기해줘서 고마워요" : "케이가 듣고 있어요…"}
-            </h1>
-            <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
-              {isDone ? "부모님이 리포트에서 확인할 수 있어요" : "자유롭게 이야기해 보세요"}
-            </p>
-          </div>
-
-          <div className="flex justify-center mb-4">
-            <div className="w-24 h-24 rounded-full bg-white shadow-sm flex items-center justify-center overflow-hidden">
-              <Image
-                src="/Images/mascot/mascot-standing.png"
-                alt="케이 마스코트"
-                width={80}
-                height={80}
-                className="object-contain"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* 대화 말풍선: 이 영역만 스크롤 */}
-        <div className="flex-1 min-h-0 px-4 flex flex-col gap-3 overflow-y-auto pb-4">
-          {visibleTurns.map((turn, i) => (
-            <div
-              key={i}
-              className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                turn.speaker === "kay" ? "self-start" : "self-end"
-              }`}
-              style={{
-                background: turn.speaker === "kay" ? "#f3f4f6" : "#3b82f6",
-                color: turn.speaker === "kay" ? "#1e1e2d" : "#ffffff",
-              }}
-            >
-              {turn.text}
-            </div>
-          ))}
-        </div>
-
-        {/* 하단 버튼 바 */}
-        <div className="flex items-center justify-center gap-8 py-5">
-          <button
-            disabled
-            className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg opacity-50 cursor-not-allowed"
-            aria-label="텍스트로 대화하기"
-          >
-            💬
-          </button>
-          <button
-            onClick={handleMic}
-            disabled={isDone}
-            className="w-16 h-16 rounded-full flex items-center justify-center text-2xl text-white shadow-md transition-transform active:scale-95 disabled:opacity-40 cursor-pointer"
-            style={{ background: "#e8845a" }}
-            aria-label="마이크로 대화하기"
-          >
-            🎤
-          </button>
+        <div className="shrink-0 flex items-center justify-center px-4 pt-4 pb-2">
           <Link
             href="/demo"
-            className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg"
-            aria-label="닫기"
+            className="font-bold text-sm cursor-pointer"
+            style={{ color: "#1a6b5a" }}
           >
-            ✕
+            내친구 케이
           </Link>
         </div>
 
-        {/* 하단 아이콘 네비게이션 (데모용 — 어떤 항목을 눌러도 시작 화면으로 이동) */}
-        <div
-          className="shrink-0 flex items-stretch border-t"
-          style={{ background: "#ffffff", borderColor: "#f3f4f6" }}
-        >
-          {NAV_ITEMS.map((item) => {
-            const active = item.label === "대화";
-            return (
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+          <div className="flex flex-col items-center text-center mb-6">
+            <Image
+              src="/Images/mascot/mascot-standing.png"
+              alt="케이 마스코트"
+              width={96}
+              height={96}
+              className="object-contain mb-2"
+            />
+            <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
+              안녕! 오늘은 뭐 하고 놀까?
+            </h1>
+            <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
+              케이랑 같이 재미있게 보내봐요
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            {HOME_CARDS.map((card) => (
               <Link
-                key={item.label}
-                href="/demo"
-                className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 select-none"
+                key={card.title}
+                href={card.href}
+                className="flex items-center gap-4 rounded-3xl px-5 py-5 shadow-md transition-transform active:scale-[0.98]"
+                style={{ background: card.bg }}
               >
-                <span className="text-lg" style={{ opacity: active ? 1 : 0.55 }}>
-                  {item.icon}
-                </span>
-                <span
-                  className="text-[10px] font-bold"
-                  style={{ color: active ? "#1a6b5a" : "#6b7280" }}
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0"
+                  style={{ background: "rgba(255,255,255,0.25)" }}
                 >
-                  {item.label}
-                </span>
+                  {card.icon}
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-white font-bold text-base">{card.title}</p>
+                  <p className="text-white/85 text-xs mt-0.5">{card.desc}</p>
+                </div>
+                <span className="text-white text-lg">→</span>
               </Link>
-            );
-          })}
+            ))}
+          </div>
         </div>
+
+        <ChildNav active="홈" />
       </div>
     </DemoFrame>
   );
