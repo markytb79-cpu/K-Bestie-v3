@@ -4,9 +4,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useDemoView } from "./DemoViewContext";
 import { ViewToggle } from "./ViewToggle";
 
+// 태블릿 = 가로(landscape), 스마트폰 = 세로(portrait). width/height 비율.
 const FRAME = {
-  tablet: { outerW: 760, outerH: 980, bezel: 20, radius: 34 },
-  mobile: { outerW: 448, outerH: 900, bezel: 14, radius: 46 },
+  tablet: { ratio: 4 / 3, bezel: 18, radius: 30 },
+  mobile: { ratio: 9 / 19.5, bezel: 14, radius: 46 },
 };
 
 // PC 웹(마우스 포인터 + 넓은 화면)에서만 기기 프레임을 보여준다.
@@ -40,12 +41,12 @@ export function DemoFrame({ children }: { children: ReactNode }) {
     );
   }
 
-  const size = FRAME[view];
-  const innerRadius = Math.max(size.radius - size.bezel, 8);
+  const { ratio, bezel, radius } = FRAME[view];
+  const innerRadius = Math.max(radius - bezel, 8);
 
   return (
     <div
-      className="min-h-dvh w-full flex items-center justify-center gap-8 py-10 px-6"
+      className="h-dvh w-full flex items-center justify-center gap-8 px-6 overflow-hidden"
       style={{ background: "#f3f4f6" }}
     >
       <ViewToggle orientation="vertical" />
@@ -53,11 +54,11 @@ export function DemoFrame({ children }: { children: ReactNode }) {
       <div
         className="relative shrink-0"
         style={{
-          width: size.outerW,
-          height: size.outerH,
+          height: "min(82vh, 800px)",
+          aspectRatio: ratio,
           background: "#1e1e2d",
-          borderRadius: size.radius,
-          padding: size.bezel,
+          borderRadius: radius,
+          padding: bezel,
           boxShadow: "0 30px 70px rgba(0,0,0,0.28)",
         }}
       >
@@ -68,8 +69,8 @@ export function DemoFrame({ children }: { children: ReactNode }) {
           />
         ) : (
           <div
-            className="absolute left-1/2 -translate-x-1/2 z-10 rounded-full"
-            style={{ top: 7, width: 8, height: 8, background: "#3a3a4a" }}
+            className="absolute top-1/2 -translate-y-1/2 z-10 rounded-full"
+            style={{ left: 6, width: 8, height: 8, background: "#3a3a4a" }}
           />
         )}
 
