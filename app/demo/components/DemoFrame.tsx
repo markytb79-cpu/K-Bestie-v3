@@ -11,37 +11,41 @@ const FRAME = {
 };
 
 // PC 웹(마우스 포인터 + 넓은 화면)에서만 기기 프레임을 보여준다.
-// 실제 태블릿/스마트폰 접속(터치 포인터)에서는 프레임 없이 꽉 차게 렌더링한다.
-function usePcDetection() {
+// 실제 태블릿/스마트폰 접속(터치 포인터)에서는 프레임 없이 꽉 차게 렌더링하며
+// 이때만 화면 너비에 맞춰 view를 자동으로 반영한다.
+// (isPc 판별과 자동 view 반영을 하나의 effect에서 함께 처리해, 페이지 이동 시
+//  isPc가 잠깐 false인 초기 렌더 타이밍에 실기기 로직이 잘못 끼어들어
+//  수동으로 고른 view를 덮어쓰는 경쟁 상태를 없앤다.)
+function useDeviceMode(setView: (v: "tablet" | "mobile") => void) {
   const [isPc, setIsPc] = useState(false);
 
   useEffect(() => {
-    const mq = window.matchMedia("(pointer: fine) and (min-width: 900px)");
-    const update = () => setIsPc(mq.matches);
+    const pcMq = window.matchMedia("(pointer: fine) and (min-width: 900px)");
+    const sizeMq = window.matchMedia("(min-width: 768px)");
+
+    const update = () => {
+      const pc = pcMq.matches;
+      setIsPc(pc);
+      if (!pc) {
+        setView(sizeMq.matches ? "tablet" : "mobile");
+      }
+    };
+
     update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, []);
+    pcMq.addEventListener("change", update);
+    sizeMq.addEventListener("change", update);
+    return () => {
+      pcMq.removeEventListener("change", update);
+      sizeMq.removeEventListener("change", update);
+    };
+  }, [setView]);
 
   return isPc;
 }
 
-// 실기기에서는 전환 버튼 없이 실제 화면 너비에 맞는 view를 자동으로 반영한다.
-function useAutoViewOnDevice(isPc: boolean, setView: (v: "tablet" | "mobile") => void) {
-  useEffect(() => {
-    if (isPc) return;
-    const mq = window.matchMedia("(min-width: 768px)");
-    const update = () => setView(mq.matches ? "tablet" : "mobile");
-    update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, [isPc, setView]);
-}
-
 export function DemoFrame({ children }: { children: ReactNode }) {
   const { view, setView } = useDemoView();
-  const isPc = usePcDetection();
-  useAutoViewOnDevice(isPc, setView);
+  const isPc = useDeviceMode(setView);
 
   if (!isPc) {
     return (
