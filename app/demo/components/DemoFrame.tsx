@@ -32,7 +32,7 @@ export function DemoFrame({ children }: { children: ReactNode }) {
 
   if (!isPc) {
     return (
-      <div className="min-h-dvh w-full" style={{ background: "#fafaf8" }}>
+      <div className="h-dvh w-full overflow-y-auto" style={{ background: "#fafaf8" }}>
         <div className="fixed top-3 right-3 z-50">
           <ViewToggle />
         </div>

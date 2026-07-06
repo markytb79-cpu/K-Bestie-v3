@@ -21,41 +21,43 @@ export default function DemoChildPage() {
 
   return (
     <DemoFrame>
-      <div className="min-h-dvh flex flex-col" style={{ background: "#fafaf8" }}>
-        {/* 헤더 */}
-        <div className="flex items-center justify-between px-4 pt-4 pb-2">
-          <Link href="/demo" className="text-xl" style={{ color: "#1e1e2d" }}>
-            ←
-          </Link>
-          <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>
-            내친구 케이
-          </span>
-          <span className="w-5" />
-        </div>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
+        {/* 상단 고정 영역: 헤더 + 마스코트 (스크롤되지 않음) */}
+        <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
+          <div className="flex items-center justify-between px-4 pt-4 pb-2">
+            <Link href="/demo" className="text-xl" style={{ color: "#1e1e2d" }}>
+              ←
+            </Link>
+            <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>
+              내친구 케이
+            </span>
+            <span className="w-5" />
+          </div>
 
-        <div className="text-center pt-2 pb-4">
-          <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
-            {isDone ? "오늘도 이야기해줘서 고마워요" : "케이가 듣고 있어요…"}
-          </h1>
-          <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
-            {isDone ? "부모님이 리포트에서 확인할 수 있어요" : "자유롭게 이야기해 보세요"}
-          </p>
-        </div>
+          <div className="text-center pt-2 pb-4">
+            <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
+              {isDone ? "오늘도 이야기해줘서 고마워요" : "케이가 듣고 있어요…"}
+            </h1>
+            <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
+              {isDone ? "부모님이 리포트에서 확인할 수 있어요" : "자유롭게 이야기해 보세요"}
+            </p>
+          </div>
 
-        <div className="flex justify-center mb-4">
-          <div className="w-24 h-24 rounded-full bg-white shadow-sm flex items-center justify-center overflow-hidden">
-            <Image
-              src="/Images/mascot/mascot-standing.png"
-              alt="케이 마스코트"
-              width={80}
-              height={80}
-              className="object-contain"
-            />
+          <div className="flex justify-center mb-4">
+            <div className="w-24 h-24 rounded-full bg-white shadow-sm flex items-center justify-center overflow-hidden">
+              <Image
+                src="/Images/mascot/mascot-standing.png"
+                alt="케이 마스코트"
+                width={80}
+                height={80}
+                className="object-contain"
+              />
+            </div>
           </div>
         </div>
 
-        {/* 대화 말풍선 */}
-        <div className="flex-1 px-4 flex flex-col gap-3 overflow-y-auto pb-4">
+        {/* 대화 말풍선: 이 영역만 스크롤 */}
+        <div className="flex-1 min-h-0 px-4 flex flex-col gap-3 overflow-y-auto pb-4">
           {visibleTurns.map((turn, i) => (
             <div
               key={i}
