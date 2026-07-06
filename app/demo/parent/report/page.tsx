@@ -27,9 +27,6 @@ function QuoteCard() {
       className="rounded-2xl px-5 py-5 mb-5"
       style={{ background: "#fdf1ec" }}
     >
-      <p className="text-2xl mb-1" style={{ color: "#e8845a" }}>
-        &ldquo;
-      </p>
       <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
         오늘의 한 줄
       </h3>
