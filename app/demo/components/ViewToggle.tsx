@@ -2,14 +2,22 @@
 
 import { useDemoView } from "./DemoViewContext";
 
-export function ViewToggle() {
+export function ViewToggle({
+  orientation = "horizontal",
+}: {
+  orientation?: "horizontal" | "vertical";
+}) {
   const { view, setView } = useDemoView();
 
   return (
-    <div className="fixed top-3 right-3 z-50 flex items-center gap-1 rounded-full bg-white/90 backdrop-blur px-1.5 py-1.5 shadow-md border border-[#f3f4f6]">
+    <div
+      className={`flex items-center gap-1 rounded-full bg-white/90 backdrop-blur px-1.5 py-1.5 shadow-md border border-[#f3f4f6] ${
+        orientation === "vertical" ? "flex-col rounded-2xl" : ""
+      }`}
+    >
       <button
         onClick={() => setView("tablet")}
-        className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${
+        className={`px-3 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
           view === "tablet" ? "bg-[#1a6b5a] text-white" : "text-[#6b7280]"
         }`}
       >
@@ -17,7 +25,7 @@ export function ViewToggle() {
       </button>
       <button
         onClick={() => setView("mobile")}
-        className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${
+        className={`px-3 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
           view === "mobile" ? "bg-[#1a6b5a] text-white" : "text-[#6b7280]"
         }`}
       >

@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { DemoViewProvider } from "./components/DemoViewContext";
-import { ViewToggle } from "./components/ViewToggle";
 
 export const metadata = {
   title: "내친구 케이 — 체험 데모",
@@ -13,10 +12,7 @@ export default function DemoLayout({ children }: { children: ReactNode }) {
         rel="stylesheet"
         href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css"
       />
-      <DemoViewProvider>
-        <ViewToggle />
-        {children}
-      </DemoViewProvider>
+      <DemoViewProvider>{children}</DemoViewProvider>
     </div>
   );
 }
