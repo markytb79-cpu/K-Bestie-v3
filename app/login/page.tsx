@@ -2,6 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
 function LoginContent() {
@@ -97,7 +98,24 @@ function LoginContent() {
         </p>
       </div>
 
-      <div className="w-full flex flex-col gap-6 bg-white/70 backdrop-blur-md rounded-3xl p-6 shadow-sm border border-white/50">
+      <div className="w-full flex gap-2.5 mb-4">
+        <Link
+          href="/demo"
+          className="flex-1 text-center py-3 rounded-xl font-bold text-sm text-white transition-transform active:scale-[0.98]"
+          style={{ background: "#e8845a" }}
+        >
+          데모 체험하기
+        </Link>
+        <a
+          href="#real-login"
+          className="flex-1 text-center py-3 rounded-xl font-bold text-sm transition-transform active:scale-[0.98] border"
+          style={{ background: "white", color: "#1a6b5a", borderColor: "#1a6b5a" }}
+        >
+          실제 사용하기
+        </a>
+      </div>
+
+      <div id="real-login" className="w-full flex flex-col gap-6 bg-white/70 backdrop-blur-md rounded-3xl p-6 shadow-sm border border-white/50">
         {error && (
           <div
             className="rounded-xl px-4 py-3 text-xs font-medium text-center"
