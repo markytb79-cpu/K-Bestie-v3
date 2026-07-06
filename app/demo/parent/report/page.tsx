@@ -152,16 +152,12 @@ export default function DemoReportPage() {
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
         <div
-          className="shrink-0 flex items-center justify-between px-4 py-4"
+          className="shrink-0 flex items-center justify-center px-4 py-4"
           style={{ background: "#fafaf8" }}
         >
-          <Link href="/demo/parent" className="text-lg" style={{ color: "#1e1e2d" }}>
-            ←
-          </Link>
           <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "#1a6b5a" }}>
             내친구 케이
           </Link>
-          <span className="w-5" />
         </div>
 
         <div

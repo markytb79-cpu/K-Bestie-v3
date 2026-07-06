@@ -22,14 +22,10 @@ export default function DemoParentGuidePage() {
   return (
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
-        <div className="shrink-0 flex items-center justify-between px-4 pt-4 pb-2">
-          <Link href="/demo/parent" className="text-lg" style={{ color: "#1e1e2d" }}>
-            ←
-          </Link>
+        <div className="shrink-0 flex items-center justify-center px-4 pt-4 pb-2">
           <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "#1a6b5a" }}>
             케이와 대화
           </Link>
-          <span className="w-5" />
         </div>
 
         <p className="shrink-0 text-center text-xs pb-3" style={{ color: "#6b7280" }}>
