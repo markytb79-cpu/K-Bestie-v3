@@ -19,9 +19,9 @@ export default function DemoChildPlayPage() {
           <Link href="/demo/child" className="text-xl" style={{ color: "#1e1e2d" }}>
             ←
           </Link>
-          <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>
+          <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "#1a6b5a" }}>
             케이와 놀이
-          </span>
+          </Link>
           <span className="w-5" />
         </div>
 

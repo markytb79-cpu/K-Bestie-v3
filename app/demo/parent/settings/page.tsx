@@ -21,9 +21,9 @@ export default function DemoParentSettingsPage() {
           <Link href="/demo/parent" className="text-lg" style={{ color: "#1e1e2d" }}>
             ←
           </Link>
-          <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>
+          <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "#1a6b5a" }}>
             설정
-          </span>
+          </Link>
           <span className="w-5" />
         </div>
 
