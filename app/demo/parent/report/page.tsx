@@ -37,7 +37,7 @@ function QuoteCard() {
         {oneLineSummary}
       </p>
       <p className="text-[11px] mt-3" style={{ color: "#e8845a" }}>
-        AI Insight by K-Bestie ✨
+        AI Insight by 내친구 케이
       </p>
     </div>
   );
@@ -60,6 +60,15 @@ function Tab1() {
 }
 
 function Tab2() {
+  const sections = [
+    detailReport.todayAndEvents,
+    detailReport.moodOfDay,
+    detailReport.schoolAndAcademy,
+    detailReport.friends,
+    detailReport.interests,
+    detailReport.parentSignal,
+  ];
+
   return (
     <div>
       <QuoteCard />
@@ -67,22 +76,16 @@ function Tab2() {
         <h3 className="font-bold text-base -mb-2" style={{ color: "#1e1e2d" }}>
           📄 상세 리포트
         </h3>
-        <div>
-          <h4 className="font-bold text-sm mb-1.5" style={{ color: "#1e1e2d" }}>
-            {detailReport.todayAndEvents.title}
-          </h4>
-          <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
-            {detailReport.todayAndEvents.body}
-          </p>
-        </div>
-        <div>
-          <h4 className="font-bold text-sm mb-1.5" style={{ color: "#1e1e2d" }}>
-            {detailReport.familyComm.title}
-          </h4>
-          <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
-            {detailReport.familyComm.body}
-          </p>
-        </div>
+        {sections.map((section) => (
+          <div key={section.title}>
+            <h4 className="font-bold text-sm mb-1.5" style={{ color: "#1e1e2d" }}>
+              {section.title}
+            </h4>
+            <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+              {section.body}
+            </p>
+          </div>
+        ))}
       </div>
     </div>
   );
