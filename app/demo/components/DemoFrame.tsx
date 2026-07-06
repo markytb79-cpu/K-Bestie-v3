@@ -26,16 +26,26 @@ function usePcDetection() {
   return isPc;
 }
 
+// 실기기에서는 전환 버튼 없이 실제 화면 너비에 맞는 view를 자동으로 반영한다.
+function useAutoViewOnDevice(isPc: boolean, setView: (v: "tablet" | "mobile") => void) {
+  useEffect(() => {
+    if (isPc) return;
+    const mq = window.matchMedia("(min-width: 768px)");
+    const update = () => setView(mq.matches ? "tablet" : "mobile");
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, [isPc, setView]);
+}
+
 export function DemoFrame({ children }: { children: ReactNode }) {
-  const { view } = useDemoView();
+  const { view, setView } = useDemoView();
   const isPc = usePcDetection();
+  useAutoViewOnDevice(isPc, setView);
 
   if (!isPc) {
     return (
       <div className="h-dvh w-full overflow-y-auto" style={{ background: "#fafaf8" }}>
-        <div className="fixed top-3 right-3 z-50">
-          <ViewToggle />
-        </div>
         {children}
       </div>
     );
