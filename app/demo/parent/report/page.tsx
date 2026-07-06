@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { DemoFrame } from "../../components/DemoFrame";
 import { useDemoView } from "../../components/DemoViewContext";
+import { ParentNav } from "../../components/ParentNav";
 import {
   oneLineSummary,
   oneMinuteSummary,
@@ -19,7 +20,7 @@ const TABS = [
   { id: 1, label: "한 줄 요약" },
   { id: 2, label: "상세 리포트" },
   { id: 3, label: "대화 실마리" },
-  { id: 4, label: "케이 상담" },
+  { id: 4, label: "대화 가이드" },
 ];
 
 function QuoteCard() {
@@ -184,6 +185,12 @@ export default function DemoReportPage() {
   const { view } = useDemoView();
   const [activeTab, setActiveTab] = useState(1);
 
+  useEffect(() => {
+    if (window.location.hash === "#guide") {
+      setActiveTab(4);
+    }
+  }, []);
+
   const renderTab = () => {
     if (activeTab === 1) return <Tab1 />;
     if (activeTab === 2) return <Tab2 />;
@@ -193,9 +200,9 @@ export default function DemoReportPage() {
 
   return (
     <DemoFrame>
-      <div className="min-h-dvh" style={{ background: "#f3f4f6" }}>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
         <div
-          className="flex items-center justify-between px-4 py-4"
+          className="shrink-0 flex items-center justify-between px-4 py-4"
           style={{ background: "#fafaf8" }}
         >
           <Link href="/demo/parent" className="text-lg" style={{ color: "#1e1e2d" }}>
@@ -207,7 +214,9 @@ export default function DemoReportPage() {
           <span className="w-5" />
         </div>
 
-        <div className={view === "tablet" ? "flex gap-6 px-4 pt-4" : ""}>
+        <div
+          className={`flex-1 min-h-0 overflow-y-auto ${view === "tablet" ? "flex gap-6 px-4 pt-4" : ""}`}
+        >
           <div
             className={
               view === "tablet"
@@ -234,6 +243,8 @@ export default function DemoReportPage() {
 
           <div className="flex-1 px-4 py-4">{renderTab()}</div>
         </div>
+
+        <ParentNav />
       </div>
     </DemoFrame>
   );

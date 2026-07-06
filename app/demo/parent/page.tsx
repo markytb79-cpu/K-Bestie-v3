@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { DemoFrame } from "../components/DemoFrame";
 import { useDemoView } from "../components/DemoViewContext";
+import { ParentNav } from "../components/ParentNav";
 import { demoProfile, dashboardCards } from "../lib/mockData";
 
 export default function DemoParentDashboardPage() {
@@ -11,10 +12,10 @@ export default function DemoParentDashboardPage() {
 
   return (
     <DemoFrame>
-      <div className="min-h-dvh" style={{ background: "#f3f4f6" }}>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
         {/* 헤더 */}
         <div
-          className="flex items-center justify-between px-4 py-4"
+          className="shrink-0 flex items-center justify-between px-4 py-4"
           style={{ background: "#fafaf8" }}
         >
           <Link href="/demo" className="text-lg" style={{ color: "#1e1e2d" }}>
@@ -23,10 +24,12 @@ export default function DemoParentDashboardPage() {
           <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>
             내친구 케이
           </span>
-          <span className="text-lg">🔔</span>
+          <Link href="/demo/parent/notifications" className="text-lg" aria-label="알림">
+            🔔
+          </Link>
         </div>
 
-        <div className="px-4 pt-4 pb-8">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
           {/* 프로필 카드 */}
           <div className="flex items-center justify-between bg-white rounded-2xl px-4 py-4 shadow-sm mb-6">
             <div className="flex items-center gap-3">
@@ -81,6 +84,8 @@ export default function DemoParentDashboardPage() {
             오늘의 리포트 보러 가기 →
           </Link>
         </div>
+
+        <ParentNav />
       </div>
     </DemoFrame>
   );

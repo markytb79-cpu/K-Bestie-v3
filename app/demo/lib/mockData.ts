@@ -71,7 +71,7 @@ export const childVoiceScript: ChatTurn[] = [
   { speaker: "child", text: "응, 요즘 그림 그리는 거 완전 좋아!" },
 ];
 
-// 부모 상담(탭4) — public/Images/mockup/06.png 기준 AI 대화 가이드
+// 부모 대화 가이드(탭4) — public/Images/mockup/06.png 기준 AI 대화 가이드
 export type GuidePair = { question: string; answer: string };
 
 export const parentGuideScript: GuidePair[] = [

@@ -21,13 +21,13 @@ export default function DemoStartPage() {
           />
         </div>
 
-        <div className="w-40 h-40 rounded-full bg-white shadow-md flex items-center justify-center mb-6 overflow-hidden">
+        <div className="mb-6 flex items-center justify-center">
           <Image
             src="/Images/mascot/mascot-standing.png"
             alt="케이 마스코트"
-            width={140}
-            height={140}
-            className="object-contain"
+            width={180}
+            height={180}
+            className="object-contain w-auto h-auto max-w-[180px] max-h-[180px]"
           />
         </div>
 
