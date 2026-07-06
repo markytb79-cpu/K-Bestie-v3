@@ -8,6 +8,14 @@ import { childVoiceScript } from "../lib/mockData";
 
 const INITIAL_VISIBLE = 2;
 
+const NAV_ITEMS = [
+  { icon: "🏠", label: "홈" },
+  { icon: "🎯", label: "미션" },
+  { icon: "💬", label: "대화" },
+  { icon: "🎮", label: "놀이" },
+  { icon: "⚙️", label: "설정" },
+];
+
 export default function DemoChildPage() {
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
 
@@ -24,14 +32,10 @@ export default function DemoChildPage() {
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
         {/* 상단 고정 영역: 헤더 + 마스코트 (스크롤되지 않음) */}
         <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
-          <div className="flex items-center justify-between px-4 pt-4 pb-2">
-            <Link href="/demo" className="text-xl" style={{ color: "#1e1e2d" }}>
-              ←
-            </Link>
+          <div className="flex items-center justify-center px-4 pt-4 pb-2">
             <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>
               내친구 케이
             </span>
-            <span className="w-5" />
           </div>
 
           <div className="text-center pt-2 pb-4">
@@ -109,6 +113,32 @@ export default function DemoChildPage() {
           >
             ✕
           </Link>
+        </div>
+
+        {/* 하단 아이콘 네비게이션 (데모용 — 실제 이동 없음) */}
+        <div
+          className="shrink-0 flex items-stretch border-t"
+          style={{ background: "#ffffff", borderColor: "#f3f4f6" }}
+        >
+          {NAV_ITEMS.map((item) => {
+            const active = item.label === "대화";
+            return (
+              <div
+                key={item.label}
+                className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 cursor-default select-none"
+              >
+                <span className="text-lg" style={{ opacity: active ? 1 : 0.55 }}>
+                  {item.icon}
+                </span>
+                <span
+                  className="text-[10px] font-bold"
+                  style={{ color: active ? "#1a6b5a" : "#6b7280" }}
+                >
+                  {item.label}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </DemoFrame>
