@@ -80,16 +80,6 @@ export default function DemoChildPage() {
               {turn.text}
             </div>
           ))}
-
-          {isDone && (
-            <Link
-              href="/demo/parent"
-              className="self-center mt-4 px-5 py-3 rounded-2xl text-sm font-bold text-white shadow-sm"
-              style={{ background: "#1a6b5a" }}
-            >
-              부모님 리포트 보러 가기 →
-            </Link>
-          )}
         </div>
 
         {/* 하단 버튼 바 */}
