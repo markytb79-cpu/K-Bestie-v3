@@ -115,7 +115,7 @@ export default function DemoChildPage() {
           </Link>
         </div>
 
-        {/* 하단 아이콘 네비게이션 (데모용 — 실제 이동 없음) */}
+        {/* 하단 아이콘 네비게이션 (데모용 — 어떤 항목을 눌러도 시작 화면으로 이동) */}
         <div
           className="shrink-0 flex items-stretch border-t"
           style={{ background: "#ffffff", borderColor: "#f3f4f6" }}
@@ -123,9 +123,10 @@ export default function DemoChildPage() {
           {NAV_ITEMS.map((item) => {
             const active = item.label === "대화";
             return (
-              <div
+              <Link
                 key={item.label}
-                className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 cursor-default select-none"
+                href="/demo"
+                className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 select-none"
               >
                 <span className="text-lg" style={{ opacity: active ? 1 : 0.55 }}>
                   {item.icon}
@@ -136,7 +137,7 @@ export default function DemoChildPage() {
                 >
                   {item.label}
                 </span>
-              </div>
+              </Link>
             );
           })}
         </div>

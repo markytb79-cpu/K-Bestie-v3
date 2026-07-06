@@ -7,7 +7,7 @@ import { DemoFrame } from "./components/DemoFrame";
 export default function DemoStartPage() {
   return (
     <DemoFrame>
-      <div className="min-h-dvh flex flex-col items-center justify-center px-6 py-10 text-center">
+      <div className="h-full flex flex-col items-center justify-center px-6 py-6 text-center overflow-hidden">
         <div className="mb-6">
           <Image
             src="/Images/logo/Logo.png"
