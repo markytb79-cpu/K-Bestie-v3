@@ -79,14 +79,6 @@ export default function DemoParentDashboardPage() {
               </div>
             ))}
           </div>
-
-          <Link
-            href="/demo/parent/report"
-            className="block w-full text-center py-4 rounded-2xl font-bold text-white text-sm shadow-sm"
-            style={{ background: "#1a6b5a" }}
-          >
-            오늘의 리포트 보러 가기 →
-          </Link>
         </div>
 
         <ParentNav />
