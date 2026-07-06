@@ -16,9 +16,9 @@ import {
 } from "../../lib/mockData";
 
 const TABS = [
-  { id: 1, label: "한 줄 요약" },
-  { id: 2, label: "상세 리포트" },
-  { id: 3, label: "대화 실마리" },
+  { id: 1, label: "빠른 요약" },
+  { id: 2, label: "상세 보기" },
+  { id: 3, label: "추천 가이드" },
 ];
 
 function QuoteCard() {
@@ -71,7 +71,6 @@ function Tab2() {
 
   return (
     <div>
-      <QuoteCard />
       <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-5">
         <h3 className="font-bold text-base -mb-2" style={{ color: "#1e1e2d" }}>
           📄 상세 리포트
