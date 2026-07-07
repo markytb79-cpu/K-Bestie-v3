@@ -4,7 +4,7 @@ import Link from "next/link";
 
 const NAV_ITEMS = [
   { icon: "🏠", label: "홈", href: "/demo/child" },
-  { icon: "🎯", label: "미션", href: "/demo/child/chat" },
+  { icon: "🎯", label: "미션", href: "/demo/child/mission" },
   { icon: "💬", label: "대화", href: "/demo/child/chat" },
   { icon: "🎮", label: "놀이", href: "/demo/child/play" },
   { icon: "⚙️", label: "설정", href: "/demo/child/settings" },

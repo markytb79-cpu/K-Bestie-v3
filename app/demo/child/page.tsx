@@ -10,7 +10,7 @@ const HOME_CARDS = [
     icon: "🎯",
     title: "미션 진행",
     desc: "오늘의 미션을 시작해요",
-    href: "/demo/child/chat",
+    href: "/demo/child/mission",
     bg: "#22c55e",
   },
   {
