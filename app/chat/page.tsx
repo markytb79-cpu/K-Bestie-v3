@@ -175,7 +175,11 @@ export default function ChatPage() {
   } = useGeminiLive({ onTurnComplete: handleTurnComplete });
 
   const status = mounted ? rawStatus : "idle";
-  const supabase = createClient();
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
+  const getSupabase = useCallback(() => {
+    if (!supabaseRef.current) supabaseRef.current = createClient();
+    return supabaseRef.current;
+  }, []);
 
   useEffect(() => {
     const fmt = () =>
@@ -247,7 +251,7 @@ export default function ChatPage() {
     setReportError(null);
 
     if (!childId) return;
-    const { data } = await supabase
+    const { data } = await getSupabase()
       .from("chat_sessions")
       .insert({ child_id: childId })
       .select("id")
@@ -258,7 +262,7 @@ export default function ChatPage() {
       localStorage.setItem("k_session_id", data.id);
     }
     await startSession();
-  }, [childId, reset, startSession, supabase]);
+  }, [childId, reset, startSession, getSupabase]);
 
   const handleStart = useCallback(async () => {
     if (!childId) return;
@@ -271,7 +275,7 @@ export default function ChatPage() {
     }
 
 
-    const { data } = await supabase
+    const { data } = await getSupabase()
       .from("chat_sessions")
       .insert({ child_id: childId })
       .select("id")
@@ -282,7 +286,7 @@ export default function ChatPage() {
       localStorage.setItem("k_session_id", data.id);
     }
     await startSession();
-  }, [childId, startSession, status, supabase]);
+  }, [childId, startSession, status, getSupabase]);
 
   const handlePause = useCallback(async () => {
     pauseSession();
