@@ -11,6 +11,10 @@ export interface BatchResult {
 }
 
 /**
+ * ⚠️ 로컬 수동 테스트 전용 — 운영 스케줄 경로 아님.
+ *    운영 배치의 소스오브트루스는 Supabase Edge Function(supabase/functions/daily-batch, weekly-batch).
+ *    이 모듈은 개발 편의용으로만 유지하며, 로직 수정 시 Edge Function(_shared/batch.ts)과 함께 맞출 것.
+ *
  * 새벽 4시 배치 진입점 — 반드시 (1)→(2)→(3) 순서로 실행
  *
  * @param targetDate  "YYYY-MM-DD" (KST 기준 배치 실행일)

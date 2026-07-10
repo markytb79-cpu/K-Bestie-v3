@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const childId = req.nextUrl.searchParams.get("childId");
   if (!childId) {
     return NextResponse.json({ error: "childId required" }, { status: 400 });
   }
-
-  const supabase = createServiceClient();
-
   const [{ data: child }, { data: sessions }] = await Promise.all([
-    supabase.from("pending_children").select("name").eq("id", childId).single(),
+    supabase.from("child_profiles").select("name").eq("id", childId).single(),
     supabase
       .from("chat_sessions")
       .select("id, started_at, turn_count, ended_at")
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   const { data: reports, error } = await supabase
     .from("daily_reports")
-    .select("id, summary_line, mood_score, emotion_tags, parent_guide, created_at, session_id")
+    .select("id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, created_at, session_id")
     .in("session_id", sessionIds)
     .order("created_at", { ascending: false });
 

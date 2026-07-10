@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase/server";
-
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -9,10 +8,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const supabase = createServiceClient();
     const { data, error } = await supabase
       .from("child_profiles")
       .select("id, name, grade, interests")
@@ -33,7 +33,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let body: { name?: string; grade?: string; interests?: string[] };
   try {
@@ -52,7 +54,6 @@ export async function PATCH(
   }
 
   try {
-    const supabase = createServiceClient();
     const { error } = await supabase
       .from("child_profiles")
       .update(updateData)
@@ -70,10 +71,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const supabase = createServiceClient();
     const { error } = await supabase
       .from("child_profiles")
       .delete()

@@ -5,6 +5,11 @@ export const runtime = "nodejs";
 export const maxDuration = 300; // 배치는 최대 5분
 
 /**
+ * ⚠️ 로컬 수동 테스트 전용 — 운영 스케줄 경로 아님.
+ *    운영 배치는 Supabase Edge Function(supabase/functions/daily-batch, weekly-batch)이
+ *    소스오브트루스이며 pg_cron이 이를 호출한다(supabase/migrations/*_pg_cron_batch_registration.sql).
+ *    이 라우트/`lib/batch/*`는 개발 편의용으로만 남겨둔다. 로직 변경 시 Edge Function과 함께 맞출 것.
+ *
  * 새벽 4시 배치 수동 실행 진입점
  *
  * POST /api/batch/daily

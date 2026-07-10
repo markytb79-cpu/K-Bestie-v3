@@ -122,8 +122,9 @@ body {
 
 /* ── HeartBloom 부모 신규 디자인 변수 ── */
 :root {
-  --hb-primary: #5B5BD6;
-  --hb-primary-light: #EDEDFC;
+  --hb-primary: #1A6B5A;
+  --hb-primary-light: #E8F5F2;
+  --hb-primary-hover: #2D9F8F;
   --hb-bg: #F4F4F8;
   --hb-card: #FFFFFF;
   --hb-border: rgba(0, 0, 0, 0.06);
@@ -132,6 +133,17 @@ body {
   --hb-danger: #EF4444;
   --hb-warning: #F59E0B;
   --hb-success: #22C55E;
+}
+
+/* ── 인라인 style 버튼 전역 호버 스타일 적용 ── */
+button[style*="var(--hb-primary)"]:not(:disabled):hover,
+button[style*="background:var(--hb-primary)"]:not(:disabled):hover,
+button[style*="backgroundColor:var(--hb-primary)"]:not(:disabled):hover,
+button[style*="background-color: var(--hb-primary)"]:not(:disabled):hover,
+button[style*="background-color:var(--hb-primary)"]:not(:disabled):hover,
+button[style*="background: var(--hb-primary)"]:not(:disabled):hover {
+  background: var(--hb-primary-hover) !important;
+  background-color: var(--hb-primary-hover) !important;
 }
 
 /* ── 부모 탭바 고정 (모바일/태블릿) ── */

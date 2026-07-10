@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import { createServiceClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getActiveReportModel } from "@/app/api/_lib/ai";
 import { REPORT_PROMPT_TEMPLATE } from "@/app/api/_lib/prompts";
 import type { Turn } from "@/hooks/useGeminiLive";
@@ -13,6 +13,10 @@ interface RequestBody {
 }
 
 export async function POST(req: NextRequest) {
+  const authClient = await createClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   let body: RequestBody;
   try {
     body = await req.json();
@@ -25,15 +29,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "sessionId and transcript required" }, { status: 400 });
   }
 
+  const { data: session, error: sessionError } = await authClient
+    .from("chat_sessions")
+    .select("id")
+    .eq("id", sessionId)
+    .single();
+
+  if (sessionError || !session) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
+
   const supabase = createServiceClient();
   const reportModel = getActiveReportModel();
 
   // 1. 세션 종료 시각 + 턴 수 업데이트
   const turnCount = transcript.filter((t) => t.role === "child").length;
-  await supabase
+  const { error: updateErr } = await supabase
     .from("chat_sessions")
     .update({ ended_at: new Date().toISOString(), turn_count: turnCount })
     .eq("id", sessionId);
+
+  if (updateErr) {
+    return NextResponse.json({ error: updateErr.message }, { status: 500 });
+  }
 
   // chat_messages는 /api/chat/messages 엔드포인트로 실시간 저장됨 — 여기서 중복 INSERT 생략
 
@@ -58,7 +76,14 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  let report: { summary_line: string; mood_score: number; emotion_tags: string[]; parent_guide: string };
+  let report: {
+    summary_line: string;
+    mood_score: number;
+    emotion_tags: string[];
+    parent_guide: string;
+    emotion_level?: string;
+    dashboard_cards?: any;
+  };
   try {
     const raw = result.text ?? "{}";
     report = JSON.parse(raw);
@@ -78,6 +103,8 @@ export async function POST(req: NextRequest) {
       mood_score: report.mood_score,
       emotion_tags: report.emotion_tags ?? [],
       parent_guide: report.parent_guide ?? "",
+      emotion_level: report.emotion_level ?? "safe",
+      dashboard_cards: report.dashboard_cards ?? {},
     })
     .select("id")
     .single();

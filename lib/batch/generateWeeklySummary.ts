@@ -25,7 +25,7 @@ function getWeekBounds(targetDate: string): { weekStart: string; weekEnd: string
 /**
  * Step 3: 주간 요약 생성
  *
- * targetDate가 일요일이거나 forceWeekly=true 일 때 실행.
+ * targetDate가 토요일이거나 forceWeekly=true 일 때 실행.
  * 해당 주(월~일) 동안 생성된 daily_reports를 child_id별로 묶어
  * weekly_summaries에 삽입한다.
  *
@@ -38,9 +38,9 @@ export async function generateWeeklySummary(
 ): Promise<WeeklySummaryResult> {
   const result: WeeklySummaryResult = { created: [], skipped: [], errors: [] };
 
-  // 일요일(0)이 아니면 skip (forceWeekly로 override 가능)
+  // 토요일(6)이 아니면 skip (forceWeekly로 override 가능) — 매주 토요일 06:00 KST 실행
   const dow = new Date(`${targetDate}T12:00:00Z`).getUTCDay();
-  if (!forceWeekly && dow !== 0) return result;
+  if (!forceWeekly && dow !== 6) return result;
 
   const { weekStart, weekEnd } = getWeekBounds(targetDate);
 
@@ -117,6 +117,7 @@ export async function generateWeeklySummary(
         mood_average: number;
         highlights: string[];
         parent_guide: string;
+        weekend_activity_recommendation?: string;
       };
       try {
         summary = JSON.parse(genResult.text ?? "{}");
@@ -139,6 +140,7 @@ export async function generateWeeklySummary(
             mood_average: summary.mood_average,
             highlights: summary.highlights ?? [],
             parent_guide: summary.parent_guide ?? "",
+            weekend_activity_recommendation: summary.weekend_activity_recommendation ?? "",
           },
           { onConflict: "child_id,week_start" },
         )

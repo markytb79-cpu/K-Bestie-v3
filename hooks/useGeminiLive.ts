@@ -1,7 +1,9 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { GoogleGenAI, Modality, type LiveServerMessage } from "@google/genai";
+
+const ENABLE_STT_FALLBACK = true;
 
 export type SessionStatus = "idle" | "connecting" | "live" | "ending" | "ended" | "paused" | "error";
 export interface Turn { role: "child" | "k"; text: string }
@@ -12,6 +14,11 @@ export interface UseGeminiLiveOptions {
    *  - k: Gemini turnComplete 이벤트 수신 시 (스트리밍 전체 텍스트)
    */
   onTurnComplete?: (turn: Turn) => void;
+  /** child 발화 전사 소스.
+   *  - "gemini"(기본): Gemini Live 자체 전사 + 브라우저 웹킷 폴백 (자유대화)
+   *  - "gcp": child 턴 오디오를 /api/mission/stt(GCP Speech-to-Text)로 전사 (미션 전용)
+   */
+  sttMode?: "gemini" | "gcp";
 }
 
 // ── PCM 인코딩/디코딩 ────────────────────────────────────────
@@ -54,6 +61,11 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   const audioMutedRef = useRef(false);
   const micEnabledRef = useRef(true);
 
+  // 로컬 STT fallback 관리 변수
+  const recognitionRef = useRef<any>(null);
+  const speechHistoryRef = useRef<string>("");
+  const hasLiveInputTxRef = useRef<boolean>(false);
+
   // ── 스케줄 기반 오디오 재생 (갭 없는 gapless 재생) ─────────
   // 이전 큐/playNext 방식은 onended→start 사이 JS 이벤트 루프 갭으로 파직거림 발생.
   // AudioContext.currentTime 기반 startAt 스케줄링으로 버퍼 경계 클릭 제거.
@@ -63,6 +75,13 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // 콜백 ref — 렌더마다 최신 함수 유지
   const onTurnCompleteRef = useRef<((turn: Turn) => void) | undefined>(undefined);
   onTurnCompleteRef.current = options?.onTurnComplete;
+
+  // STT 모드 ref — startSession 클로저에서 최신값 참조
+  const sttModeRef = useRef<"gemini" | "gcp">(options?.sttMode ?? "gemini");
+  sttModeRef.current = options?.sttMode ?? "gemini";
+
+  // GCP STT용 child 턴 오디오 버퍼 (PCM16 raw bytes 청크) — 매 턴 flush 후 리셋
+  const childAudioChunksRef = useRef<Uint8Array[]>([]);
 
   // 진단 카운터 — 첫 8개 서버 메시지의 serverContent 키를 콘솔에 출력
   const diagCountRef = useRef(0);
@@ -111,6 +130,56 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     setTranscript([...transcriptRef.current]);
   }
 
+  function concatChunksToBase64(chunks: Uint8Array[]): string {
+    let total = 0;
+    for (const c of chunks) total += c.length;
+    const merged = new Uint8Array(total);
+    let off = 0;
+    for (const c of chunks) { merged.set(c, off); off += c.length; }
+    let binary = "";
+    for (let i = 0; i < merged.length; i++) binary += String.fromCharCode(merged[i]);
+    return btoa(binary);
+  }
+
+  // child 턴 flush — gemini 모드는 즉시 동기 처리(기존 동작 유지),
+  // gcp 모드는 누적 오디오를 /api/mission/stt로 전사(fire-and-forget)해 최종 텍스트로 콜백.
+  function flushChildTurn(fallbackText: string) {
+    if (sttModeRef.current !== "gcp") {
+      appendTurn({ role: "child", text: fallbackText });
+      onTurnCompleteRef.current?.({ role: "child", text: fallbackText });
+      return;
+    }
+
+    const chunks = childAudioChunksRef.current;
+    childAudioChunksRef.current = [];
+
+    void (async () => {
+      let finalText = fallbackText;
+      if (chunks.length > 0) {
+        try {
+          const audioBase64 = concatChunksToBase64(chunks);
+          const res = await fetch("/api/mission/stt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ audioBase64 }),
+          });
+          if (res.ok) {
+            const { transcript } = await res.json();
+            if (typeof transcript === "string" && transcript.trim()) {
+              finalText = transcript.trim();
+            }
+          }
+        } catch {
+          // GCP 실패 시 gemini 전사(fallbackText) 그대로 사용
+        }
+      }
+      if (finalText && finalText.trim()) {
+        appendTurn({ role: "child", text: finalText });
+        onTurnCompleteRef.current?.({ role: "child", text: finalText });
+      }
+    })();
+  }
+
   function teardown() {
     stopAllScheduledSources();
     processorRef.current?.disconnect();
@@ -124,7 +193,57 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     const sess = sessionRef.current;
     sessionRef.current = null;
     try { sess?.close(); } catch { /* 이미 닫힌 경우 무시 */ }
+
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch {}
+      recognitionRef.current = null;
+    }
+
+    childAudioChunksRef.current = [];
   }
+
+  const initSpeechRecognition = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "ko-KR";
+
+    rec.onresult = (event: any) => {
+      if (hasLiveInputTxRef.current) return;
+      let interimTranscript = "";
+      let finalTranscript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+
+      const text = finalTranscript || interimTranscript;
+      if (text.trim()) {
+        speechHistoryRef.current = text.trim();
+        console.log("[STT Fallback] interim text:", speechHistoryRef.current);
+      }
+    };
+
+    rec.onerror = (e: any) => {
+      console.warn("[STT Fallback] error:", e.error);
+    };
+
+    rec.onend = () => {
+      if (statusRef.current === "live" && micEnabledRef.current && recognitionRef.current) {
+        try { recognitionRef.current.start(); } catch {}
+      }
+    };
+
+    recognitionRef.current = rec;
+  }, []);
 
   const startSession = useCallback(async (opts?: { preserveHistory?: boolean }) => {
     if (statusRef.current === "live" || statusRef.current === "connecting") return;
@@ -180,6 +299,19 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
           onopen: () => {
             console.log("[K] ✅ WebSocket open");
             updateStatus("live");
+
+            // 로컬 STT 폴백 시작 — gcp 모드에서는 브라우저 폴백을 켜지 않음(초기화도 안 함)
+            if (ENABLE_STT_FALLBACK && sttModeRef.current !== "gcp") {
+              initSpeechRecognition();
+              try {
+                recognitionRef.current?.start();
+                console.log("[STT Fallback] webkitSpeechRecognition started");
+              } catch (err) {
+                console.warn("[STT Fallback] failed to start SpeechRecognition:", err);
+              }
+              speechHistoryRef.current = "";
+              hasLiveInputTxRef.current = false;
+            }
           },
           onmessage: (msg: LiveServerMessage) => {
             // ── 오디오 재생 ──────────────────────────────────────
@@ -204,21 +336,34 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
             if (inTx) {
               console.log("[K] 📝 child (buf):", inTx);
               pendingChildText += inTx;
+              
+              // 라이브 전사 성공 시 로컬 STT는 무력화
+              hasLiveInputTxRef.current = true;
+              speechHistoryRef.current = "";
             }
 
             // ── 케이 응답 트랜스크립션 ────────────────────────────
             const outTx = (sc.outputTranscription as {text?: string} | undefined)?.text;
             if (outTx) {
+              // K가 대답을 시작하기 전에 폴백 적용 확인
+              if (ENABLE_STT_FALLBACK && !hasLiveInputTxRef.current && speechHistoryRef.current) {
+                console.log("[STT Fallback] Gemini 전사 누락 감지. 로컬 STT 주입:", speechHistoryRef.current);
+                pendingChildText = speechHistoryRef.current;
+                speechHistoryRef.current = "";
+              }
+
               // K가 말을 시작하는 순간 아이 버퍼 flush
-              if (pendingChildText) {
+              if (pendingChildText || (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0)) {
                 console.log("[K] 📝 child (flush):", pendingChildText);
-                appendTurn({ role: "child", text: pendingChildText });
-                onTurnCompleteRef.current?.({ role: "child", text: pendingChildText });
+                flushChildTurn(pendingChildText);
                 pendingChildText = "";
               }
               console.log("[K] 💬 k:", outTx);
               appendTurn({ role: "k", text: outTx });
               pendingKText += outTx;
+
+              // 다음 턴을 위해 전사 감지 플래그 초기화
+              hasLiveInputTxRef.current = false;
             }
 
             // ── 턴 완료 ───────────────────────────────────────────
@@ -227,6 +372,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
                 onTurnCompleteRef.current?.({ role: "k", text: pendingKText });
                 pendingKText = "";
               }
+              hasLiveInputTxRef.current = false;
+              speechHistoryRef.current = "";
             }
           },
           onerror: (e: ErrorEvent) => {
@@ -238,9 +385,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
           onclose: (e: CloseEvent) => {
             console.log("[K] 🔌 closed — code:", e.code, e.reason || "");
             // 세션 종료 전 미완료 아이/K 턴 flush
-            if (pendingChildText) {
-              appendTurn({ role: "child", text: pendingChildText });
-              onTurnCompleteRef.current?.({ role: "child", text: pendingChildText });
+            if (pendingChildText || (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0)) {
+              flushChildTurn(pendingChildText);
               pendingChildText = "";
             }
             if (pendingKText) {
@@ -275,6 +421,14 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
           const float32 = ev.inputBuffer.getChannelData(0);
           const pcm = encodePCM16(float32);
           sessionRef.current.sendRealtimeInput({ audio: { data: pcm, mimeType: "audio/pcm;rate=16000" } });
+          // gcp 모드: Gemini 전송과 별개로 현재 child 턴 오디오 버퍼에도 누적
+          if (sttModeRef.current === "gcp") {
+            const buf = new Int16Array(float32.length);
+            for (let i = 0; i < float32.length; i++) {
+              buf[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
+            }
+            childAudioChunksRef.current.push(new Uint8Array(buf.buffer.slice(0)));
+          }
           if (++chunkCount % 40 === 1) console.log(`[K] 📡 PCM #${chunkCount}`);
         }
       };
@@ -334,9 +488,15 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     return true;
   }, []);
 
+  useEffect(() => {
+    return () => {
+      teardown();
+    };
+  }, []);
+
   return {
     status, error, transcript,
     startSession, stopSession, pauseSession, getTranscript, reset,
-    sendText, setAudioMuted, setMicEnabled,
+    sendText, setAudioMuted, setMicEnabled, appendTurn,
   };
 }

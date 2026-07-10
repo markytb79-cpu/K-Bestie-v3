@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   let body: { sessionId?: string; role?: string; content?: string };
   try {
     body = await req.json();
@@ -19,8 +23,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "role must be child or k" }, { status: 400 });
   }
 
-  const supabase = createServiceClient();
-  const { error } = await supabase
+  const { data: session, error: sessionError } = await supabase
+    .from("chat_sessions")
+    .select("id, session_type")
+    .eq("id", sessionId)
+    .single();
+
+  if (sessionError || !session) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
+
+  const service = createServiceClient();
+  const { error } = await service
     .from("chat_messages")
     .insert({ session_id: sessionId, role, content: content.trim() });
 

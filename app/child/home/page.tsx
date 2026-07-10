@@ -2,18 +2,40 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import ChildTabBar from "@/components/ChildTabBar";
-import { useStore } from "@/hooks/useStore";
+import Image from "next/image";
+import { DemoFrame } from "@/app/demo/components/DemoFrame";
+import { RealChildNav } from "@/components/RealChildNav";
 
 type ChildInfo = { id: string; name: string; grade: string };
+
+const HOME_CARDS = [
+  {
+    icon: "🎯",
+    title: "미션 진행",
+    desc: "오늘의 미션을 시작해요",
+    href: "/child/missions",
+    bg: "#22c55e",
+  },
+  {
+    icon: "💬",
+    title: "대화하기",
+    desc: "케이랑 이야기 나눠요",
+    href: "/chat",
+    bg: "#e8845a",
+  },
+  {
+    icon: "🎮",
+    title: "케이와 놀이",
+    desc: "재미있는 놀이를 해봐요",
+    href: "/child/play",
+    bg: "#2d9f8f",
+  },
+];
 
 export default function ChildHomePage() {
   const [child, setChild] = useState<ChildInfo | null>(null);
   const [noChild, setNoChild] = useState(false);
-  const store = useStore();
-  const missions = store.missions;
-  const completedCount = missions.filter((m) => m.completed).length;
-  const totalCount = missions.length;
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // 1. /api/child/me를 호출하여 세션 기반의 아이 프로필 확인
@@ -30,20 +52,31 @@ export default function ChildHomePage() {
         return false;
       })
       .then((success) => {
-        if (success) return;
+        if (success) {
+          setLoading(false);
+          return;
+        }
 
         // 2. 세션에 없으면 기존 localStorage 및 ID 매핑 폴백
         const id = localStorage.getItem("k_child_id");
         if (!id) {
           setNoChild(true);
+          setLoading(false);
           return;
         }
         fetch(`/api/child/${encodeURIComponent(id)}`)
           .then((r) => (r.ok ? r.json() : null))
-          .then((data) => { if (data) setChild(data); else setNoChild(true); })
-          .catch(() => setNoChild(true));
+          .then((data) => {
+            if (data) setChild(data);
+            else setNoChild(true);
+          })
+          .catch(() => setNoChild(true))
+          .finally(() => setLoading(false));
       })
-      .catch(() => setNoChild(true));
+      .catch(() => {
+        setNoChild(true);
+        setLoading(false);
+      });
   }, []);
 
   const handleLogout = async () => {
@@ -55,217 +88,102 @@ export default function ChildHomePage() {
     window.location.href = "/login?role=child";
   };
 
+  if (loading) {
+    return (
+      <DemoFrame>
+        <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
+          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
+        </div>
+      </DemoFrame>
+    );
+  }
+
   if (noChild) {
     return (
-      <div
-        className="min-h-dvh flex flex-col items-center justify-center px-6 py-8 text-center"
-        style={{ background: "var(--color-child-bg)", fontFamily: "var(--font-child)" }}
-      >
-        <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-sm border border-emerald-500/10">
-          <p className="text-5xl mb-4">🌱</p>
-          <p className="text-lg font-bold text-gray-800">가족 연결이 필요해요</p>
-          <p className="text-xs mt-3 leading-relaxed text-gray-500">
-            현재 로그인한 구글 계정이 가족에 등록되어 있지 않습니다.
-            <br />
-            부모님 앱에서 아이 추가 화면을 통해 이메일을 예약 등록했는지 확인해 주세요.
-          </p>
+      <DemoFrame>
+        <div
+          className="h-full flex flex-col items-center justify-center px-6 py-8 text-center"
+          style={{ background: "#fafaf8" }}
+        >
+          <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-md border border-emerald-500/10">
+            <p className="text-5xl mb-4">🌱</p>
+            <p className="text-lg font-bold text-gray-800">가족 연결이 필요해요</p>
+            <p className="text-xs mt-3 leading-relaxed text-gray-500">
+              현재 로그인한 구글 계정이 가족에 등록되어 있지 않습니다.
+              <br />
+              부모님 앱에서 아이 추가 화면을 통해 이메일을 예약 등록했는지 확인해 주세요.
+            </p>
 
-          <button
-            onClick={handleLogout}
-            className="w-full py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform mt-6 cursor-pointer"
-            style={{ background: "var(--color-primary)" }}
-          >
-            로그아웃 후 다시 로그인하기
-          </button>
+            <button
+              onClick={handleLogout}
+              className="w-full py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform mt-6 cursor-pointer"
+              style={{ background: "#1a6b5a" }}
+            >
+              로그아웃 후 다시 로그인하기
+            </button>
+          </div>
         </div>
-      </div>
+      </DemoFrame>
     );
   }
 
   return (
-    <div
-      className="min-h-dvh pb-[72px] w-full transition-all"
-      style={{ background: "var(--color-child-bg)", fontFamily: "var(--font-child)" }}
-    >
-      {/* 헤더 */}
-      <div className="px-5 pt-12 pb-2 text-center">
-        <p className="text-3xl mb-2">🌱</p>
-        <h1 className="text-xl font-bold" style={{ color: "var(--color-primary)" }}>
-          {child ? `안녕 ${child.name}! 나 케이야 👋` : "안녕! 나 케이야 👋"}
-        </h1>
-        <p className="text-sm mt-1" style={{ color: "var(--color-text-muted)" }}>
-          오늘 하루 어땠어? 같이 얘기해 보자!
-        </p>
-      </div>
+    <DemoFrame>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
+        <div className="shrink-0 flex items-center justify-center px-4 pt-4 pb-2">
+          <Link
+            href="/child/home"
+            className="font-bold text-sm cursor-pointer"
+            style={{ color: "#1a6b5a" }}
+          >
+            내친구 케이
+          </Link>
+        </div>
 
-      <div className="max-w-5xl mx-auto px-4 py-4">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
-          
-          {/* 왼쪽 열: 케이 캐릭터 카드 */}
-          <div className="md:col-span-5 flex flex-col gap-4">
-            <div
-              className="rounded-3xl p-5 flex items-center gap-4 bg-white"
-              style={{ boxShadow: "0 2px 16px rgba(26,107,90,0.10)" }}
-            >
-              <div
-                className="w-16 h-16 rounded-full flex items-center justify-center text-4xl shrink-0"
-                style={{ background: "hsl(44 100% 92%)" }}
-              >
-                🌿
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-bold text-gray-800">케이</p>
-                <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-muted)" }}>
-                  오늘도 네 이야기가 궁금해!
-                  <br />
-                  미션도 같이 해보자 🎯
-                </p>
-                <Link
-                  href="/child/chat"
-                  className="mt-2.5 inline-block px-4 py-1.5 rounded-full text-xs font-bold text-white transition-transform active:scale-95"
-                  style={{ background: "var(--color-primary)" }}
-                >
-                  대화하기 💬
-                </Link>
-              </div>
-            </div>
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+          <div className="flex flex-col items-center text-center mb-6">
+            <Image
+              src="/Images/mascot/mascot-standing.png"
+              alt="케이 마스코트"
+              width={96}
+              height={96}
+              className="object-contain mb-2"
+              priority
+            />
+            <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
+              {child ? `안녕 ${child.name}! 오늘은 뭐 하고 놀까?` : "안녕! 오늘은 뭐 하고 놀까?"}
+            </h1>
+            <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
+              케이랑 같이 재미있게 보내봐요
+            </p>
           </div>
 
-          {/* 오른쪽 열: 미션 진행 현황 */}
-          <div className="md:col-span-7 flex flex-col gap-4">
-            <div className="bg-white rounded-3xl p-5" style={{ boxShadow: "0 2px 16px rgba(26,107,90,0.05)" }}>
-              <div className="flex items-center justify-between mb-2.5">
-                <h2 className="text-[15px] font-bold" style={{ color: "var(--color-primary)" }}>
-                  오늘의 미션
-                </h2>
-                <span className="text-xs font-semibold" style={{ color: "var(--color-text-muted)" }}>
-                  {completedCount}/{totalCount} 완료
-                </span>
-              </div>
-
-              {/* 진행 바 */}
-              <div className="h-2 rounded-full bg-gray-200 mb-4 overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{
-                    width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%`,
-                    background: "linear-gradient(90deg, #1A6B5A 0%, #2a8a72 100%)",
-                  }}
-                />
-              </div>
-
-              {/* 미션 카드 (처음 3개) */}
-              <div className="flex flex-col gap-2.5">
-                {missions.slice(0, 3).map((mission) => (
-                  <div
-                    key={mission.id}
-                    className="flex items-center gap-3 bg-gray-50 rounded-2xl px-4 py-3.5"
-                    style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}
-                  >
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-base shrink-0"
-                      style={{ background: mission.completed ? "#DCFCE7" : "hsl(44 100% 92%)" }}
-                    >
-                      {mission.completed ? "✅" : mission.emoji}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p
-                        className="text-sm font-semibold truncate"
-                        style={{
-                          color: mission.completed ? "#9CA3AF" : "var(--color-text-base)",
-                          textDecoration: mission.completed ? "line-through" : "none",
-                        }}
-                      >
-                        {mission.title}
-                      </p>
-                      <p className="text-xs truncate" style={{ color: "var(--color-text-muted)" }}>
-                        {mission.desc}
-                      </p>
-                    </div>
-                    {mission.completed && <span className="text-lg shrink-0">🎉</span>}
-                  </div>
-                ))}
-              </div>
-
-              {/* 미션 전체 보기 */}
+          <div className="flex flex-col gap-4">
+            {HOME_CARDS.map((card) => (
               <Link
-                href="/child/missions"
-                className="mt-4 block text-center py-3 rounded-2xl text-sm font-semibold border transition-opacity active:opacity-70"
-                style={{
-                  borderColor: "rgba(26,107,90,0.25)",
-                  color: "var(--color-primary)",
-                  background: "rgba(26,107,90,0.04)",
-                }}
+                key={card.title}
+                href={card.href}
+                className="flex items-center gap-4 rounded-3xl px-5 py-5 shadow-md transition-transform active:scale-[0.98]"
+                style={{ background: card.bg }}
               >
-                미션 전체 보기 →
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0"
+                  style={{ background: "rgba(255,255,255,0.25)" }}
+                >
+                  {card.icon}
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-white font-bold text-base">{card.title}</p>
+                  <p className="text-white/85 text-xs mt-0.5">{card.desc}</p>
+                </div>
+                <span className="text-white text-lg">→</span>
               </Link>
-            </div>
+            ))}
           </div>
-
         </div>
+
+        <RealChildNav active="홈" />
       </div>
-
-      {/* 활동 4종 그리드 */}
-      <div className="max-w-5xl mx-auto px-4 py-4 mt-2">
-        <h3 className="text-sm font-bold text-gray-700 mb-3 px-1">활동 선택하기</h3>
-        <div className="grid grid-cols-2 gap-4">
-          {/* 1. 오늘의 미션 */}
-          <Link
-            href="/child/missions"
-            className="bg-white rounded-3xl p-5 flex flex-col justify-between h-[140px] shadow-sm border border-emerald-500/5 active:scale-[0.97] transition-all hover:shadow-md"
-          >
-            <div className="text-3xl">🎯</div>
-            <div>
-              <p className="text-sm font-bold text-gray-800">오늘의 미션</p>
-              <p className="text-[11px] text-gray-400 mt-1">오늘 미션 진행하기</p>
-            </div>
-          </Link>
-
-          {/* 2. 자유 대화 */}
-          <Link
-            href="/child/chat"
-            className="bg-white rounded-3xl p-5 flex flex-col justify-between h-[140px] shadow-sm border border-emerald-500/5 active:scale-[0.97] transition-all hover:shadow-md"
-          >
-            <div className="text-3xl">💬</div>
-            <div>
-              <p className="text-sm font-bold text-gray-800">자유 대화</p>
-              <p className="text-[11px] text-gray-400 mt-1">케이와 편하게 대화하기</p>
-            </div>
-          </Link>
-
-          {/* 3. 책읽기 */}
-          <button
-            onClick={() => alert("준비 중인 서비스입니다. 조금만 기다려주세요! 📚")}
-            className="bg-white rounded-3xl p-5 flex flex-col justify-between h-[140px] shadow-sm border border-gray-100 opacity-65 text-left active:scale-[0.97] transition-all"
-          >
-            <div className="flex justify-between items-start">
-              <span className="text-3xl">📚</span>
-              <span className="text-[10px] font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">준비중</span>
-            </div>
-            <div>
-              <p className="text-sm font-bold text-gray-400">책읽기</p>
-              <p className="text-[11px] text-gray-300 mt-1">케이가 들려주는 책방</p>
-            </div>
-          </button>
-
-          {/* 4. 퀴즈 */}
-          <button
-            onClick={() => alert("준비 중인 서비스입니다. 조금만 기다려주세요! 🧩")}
-            className="bg-white rounded-3xl p-5 flex flex-col justify-between h-[140px] shadow-sm border border-gray-100 opacity-65 text-left active:scale-[0.97] transition-all"
-          >
-            <div className="flex justify-between items-start">
-              <span className="text-3xl">🧩</span>
-              <span className="text-[10px] font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">준비중</span>
-            </div>
-            <div>
-              <p className="text-sm font-bold text-gray-400">퀴즈 풀기</p>
-              <p className="text-[11px] text-gray-300 mt-1">재미있는 상식 퀴즈</p>
-            </div>
-          </button>
-        </div>
-      </div>
-
-      <ChildTabBar />
-    </div>
+    </DemoFrame>
   );
 }

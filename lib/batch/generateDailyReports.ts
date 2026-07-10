@@ -71,6 +71,8 @@ export async function generateDailyReports(targetDate: string): Promise<DailyRep
         mood_score: number;
         emotion_tags: string[];
         parent_guide: string;
+        emotion_level?: string;
+        dashboard_cards?: Record<string, string>;
       };
       try {
         report = JSON.parse(genResult.text ?? "{}");
@@ -80,6 +82,25 @@ export async function generateDailyReports(targetDate: string): Promise<DailyRep
 
       report.mood_score = Math.max(1, Math.min(10, Math.round(report.mood_score ?? 5)));
 
+      const emotionLevel =
+        report.emotion_level === "warning" || report.emotion_level === "danger"
+          ? report.emotion_level
+          : "safe";
+
+      const DASHBOARD_KEYS = [
+        "school_life",
+        "peer_relations",
+        "interests",
+        "study_concerns",
+        "digital_interests",
+        "future_dreams",
+        "recurring_stories",
+      ] as const;
+      const rawCards = report.dashboard_cards ?? {};
+      const dashboardCards = Object.fromEntries(
+        DASHBOARD_KEYS.map((k) => [k, typeof rawCards[k] === "string" ? rawCards[k] : ""]),
+      );
+
       const { data: inserted, error: insertErr } = await db
         .from("daily_reports")
         .insert({
@@ -88,6 +109,8 @@ export async function generateDailyReports(targetDate: string): Promise<DailyRep
           mood_score: report.mood_score,
           emotion_tags: report.emotion_tags ?? [],
           parent_guide: report.parent_guide ?? "",
+          emotion_level: emotionLevel,
+          dashboard_cards: dashboardCards,
         })
         .select("id")
         .single();

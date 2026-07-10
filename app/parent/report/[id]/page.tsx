@@ -2,7 +2,20 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { BackArrow } from "@/components/ParentIcons";
+import { DemoFrame } from "@/app/demo/components/DemoFrame";
+import { RealParentNav } from "@/components/RealParentNav";
+
+type EmotionLevel = "safe" | "warning" | "danger";
+
+interface DashboardCards {
+  school_life?: string;
+  peer_relations?: string;
+  interests?: string;
+  study_concerns?: string;
+  digital_interests?: string;
+  future_dreams?: string;
+  recurring_stories?: string;
+}
 
 interface Report {
   id: string;
@@ -10,26 +23,23 @@ interface Report {
   mood_score: number;
   emotion_tags: string[];
   parent_guide: string;
+  emotion_level: EmotionLevel | null;
+  dashboard_cards: DashboardCards | null;
   created_at: string;
-  session: { started_at: string; turn_count: number; ended_at: string | null } | null;
 }
 
+const TABS = [
+  { id: 1, label: "빠른 요약" },
+  { id: 2, label: "상세 보기" },
+  { id: 3, label: "추천 가이드" },
+];
 
-function moodLabel(score: number): { emoji: string; text: string } {
-  if (score <= 2) return { emoji: "😢", text: "많이 힘들어 보여요" };
-  if (score <= 4) return { emoji: "😔", text: "조금 힘들었던 것 같아요" };
-  if (score <= 6) return { emoji: "😊", text: "평온한 하루였어요" };
-  if (score <= 8) return { emoji: "😄", text: "즐거운 대화였어요" };
-  return { emoji: "🌟", text: "아주 신나는 하루였어요!" };
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ko-KR", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "long",
-  });
+function moodLabel(score: number): string {
+  if (score <= 2) return "많이 힘들어 보여요";
+  if (score <= 4) return "조금 힘들었던 것 같아요";
+  if (score <= 6) return "평온한 하루였어요";
+  if (score <= 8) return "즐거운 대화였어요";
+  return "아주 신나는 하루였어요!";
 }
 
 export default function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -37,6 +47,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState(1);
 
   useEffect(() => {
     fetch(`/api/parent/reports/${id}`)
@@ -53,204 +64,196 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center"
-           style={{ background: "var(--hb-bg)" }}>
-        <div className="w-8 h-8 rounded-full animate-pulse"
-             style={{ background: "var(--hb-primary)" }} />
-      </div>
+      <DemoFrame>
+        <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
+          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
+        </div>
+      </DemoFrame>
     );
   }
 
   if (error || !report) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center"
-           style={{ background: "var(--hb-bg)" }}>
-        <p className="text-lg font-semibold mb-4">{error ?? "리포트를 불러올 수 없어요"}</p>
-        <Link href="/parent/report" className="text-sm underline"
-              style={{ color: "var(--hb-primary)" }}>
-          목록으로 돌아가기
-        </Link>
-      </div>
+      <DemoFrame>
+        <div className="h-full flex flex-col items-center justify-center px-6 text-center" style={{ background: "#fafaf8" }}>
+          <p className="text-sm font-semibold mb-4 text-red-500">{error ?? "리포트를 불러올 수 없어요"}</p>
+          <Link href="/parent/report" className="text-xs underline font-bold" style={{ color: "#1a6b5a" }}>
+            목록으로 돌아가기
+          </Link>
+        </div>
+      </DemoFrame>
     );
   }
 
-  const mood = moodLabel(report.mood_score);
+  const dbCards = report.dashboard_cards ?? {};
 
-  return (
-    <div
-      className="min-h-dvh pb-[72px] lg:pb-12 lg:pl-[240px] w-full transition-all"
-      style={{ background: "var(--hb-bg)" }}
-    >
-      {/* 헤더 */}
-      <header className="px-5 pt-12 pb-4 flex items-center gap-3 bg-white">
-        <Link href="/parent/report" style={{ color: "var(--hb-primary)" }}>
-          <BackArrow />
-        </Link>
-        <div>
-          <p className="text-xs font-medium" style={{ color: "var(--hb-muted)" }}>
-            {formatDate(report.created_at)}
-          </p>
-          <h1 className="text-[17px] font-bold text-gray-900">
-            오늘의 리포트
-          </h1>
-        </div>
-      </header>
+  // 빠른 요약 탭
+  const Tab1 = () => (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl px-5 py-5" style={{ background: "#fdf1ec" }}>
+        <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+          오늘의 한 줄
+        </h3>
+        <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+          {report.summary_line || "대화 요약이 준비 중입니다."}
+        </p>
+        <p className="text-[11px] mt-3" style={{ color: "#e8845a" }}>
+          AI Insight by 내친구 케이
+        </p>
+      </div>
 
-      <div className="max-w-5xl mx-auto px-4 py-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          
-          {/* 왼쪽 열: 분석 정보 */}
-          <div className="flex flex-col gap-4">
-            {/* 기분 카드 */}
-            <div className="bg-white rounded-2xl p-5 flex items-center gap-4 shadow-sm" style={{ boxShadow: "var(--hb-shadow)" }}>
-              <span className="text-5xl">{mood.emoji}</span>
-              <div>
-                <p className="text-2xl font-bold" style={{ color: "var(--hb-primary)" }}>
-                  {report.mood_score}점
-                </p>
-                <p className="text-sm text-gray-600">
-                  {mood.text}
-                </p>
-              </div>
-              {/* 기분 바 */}
-              <div className="ml-auto flex-shrink-0 w-20">
-                <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                      width: `${report.mood_score * 10}%`,
-                      background: "var(--hb-primary)",
-                    }}
-                  />
-                </div>
-                <p className="text-xs text-right mt-1" style={{ color: "var(--hb-muted)" }}>
-                  {report.mood_score}/10
-                </p>
-              </div>
-            </div>
-
-            {/* 4분할 분석 카드 */}
-            <div className="bg-white rounded-2xl p-5 shadow-sm" style={{ boxShadow: "var(--hb-shadow)" }}>
-              <p className="text-xs font-bold mb-4" style={{ color: "var(--hb-muted)" }}>
-                오늘의 영역별 분석 📊
-              </p>
-              <div className="grid grid-cols-2 gap-3.5">
-                
-                {/* 1. 감정변화 */}
-                <div className="p-3.5 rounded-2xl bg-indigo-50/20 border border-gray-100/80 flex flex-col justify-between hover:bg-indigo-50/40 transition-all duration-200">
-                  <div>
-                    <span className="text-xs font-bold text-gray-400">감정 변화</span>
-                  </div>
-                  <div className="mt-2 flex items-center gap-1.5">
-                    <span className="text-sm font-bold text-gray-800">
-                      {report.mood_score >= 6 ? "🟢 평온" : "🟡 보통"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* 2. 교우관계 */}
-                <div className="p-3.5 rounded-2xl bg-indigo-50/20 border border-gray-100/80 flex flex-col justify-between hover:bg-indigo-50/40 transition-all duration-200">
-                  <div>
-                    <span className="text-xs font-bold text-gray-400">교우 관계</span>
-                  </div>
-                  <div className="mt-2 flex items-center gap-1.5">
-                    <span className="text-sm font-bold text-gray-800">
-                      {report.emotion_tags.some(t => t.includes("친구") || t.includes("싸움") || t.includes("다툼")) ? "🟡 지침" : "🟢 평온"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* 3. 학교스트레스 */}
-                <div className="p-3.5 rounded-2xl bg-indigo-50/20 border border-gray-100/80 flex flex-col justify-between hover:bg-indigo-50/40 transition-all duration-200">
-                  <div>
-                    <span className="text-xs font-bold text-gray-400">학교 스트레스</span>
-                  </div>
-                  <div className="mt-2 flex items-center gap-1.5">
-                    <span className="text-sm font-bold text-gray-800">
-                      {report.emotion_tags.some(t => t.includes("학교") || t.includes("시험") || t.includes("공부") || t.includes("숙제")) ? "🟡 지침" : "🟢 평온"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* 4. 에너지 */}
-                <div className="p-3.5 rounded-2xl bg-indigo-50/20 border border-gray-100/80 flex flex-col justify-between hover:bg-indigo-50/40 transition-all duration-200">
-                  <div>
-                    <span className="text-xs font-bold text-gray-400">에너지 수준</span>
-                  </div>
-                  <div className="mt-2 flex items-center gap-1.5">
-                    <span className="text-sm font-bold text-gray-800">
-                      {report.mood_score >= 7 ? "🟢 활기참" : "🟡 보통"}
-                    </span>
-                  </div>
-                </div>
-
-              </div>
-            </div>
-
-
-            {/* 한 줄 요약 */}
-            <div className="bg-white rounded-2xl p-5 shadow-sm" style={{ boxShadow: "var(--hb-shadow)" }}>
-              <p className="text-xs font-bold mb-2" style={{ color: "var(--hb-muted)" }}>
-                오늘의 대화 요약
-              </p>
-              <p className="font-semibold text-base leading-snug text-gray-800">{report.summary_line}</p>
-              {report.session?.turn_count ? (
-                <p className="text-xs mt-2" style={{ color: "var(--hb-muted)" }}>
-                  총 {report.session.turn_count}번 대화했어요
-                </p>
-              ) : null}
-            </div>
-
-            {/* 감정 태그 */}
-            {report.emotion_tags.length > 0 && (
-              <div className="bg-white rounded-2xl p-5 shadow-sm" style={{ boxShadow: "var(--hb-shadow)" }}>
-                <p className="text-xs font-bold mb-3" style={{ color: "var(--hb-muted)" }}>
-                  감정 키워드
-                </p>
-                <div className="flex gap-2 flex-wrap">
-                  {report.emotion_tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-3 py-1.5 rounded-full text-sm font-medium"
-                      style={{ background: "var(--hb-primary-light)", color: "var(--hb-primary)" }}
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 오른쪽 열: 가이드 및 액션 */}
-          <div className="flex flex-col gap-4">
-            {/* 부모 가이드 */}
-            {report.parent_guide && (
-              <div className="rounded-2xl p-5 shadow-sm" style={{ background: "hsl(17 76% 96%)", boxShadow: "var(--hb-shadow)" }}>
-                <p className="text-xs font-bold mb-2" style={{ color: "var(--hb-danger)" }}>
-                  💡 오늘 이런 이야기를 해보세요
-                </p>
-                <p className="text-sm font-medium leading-relaxed text-gray-800">{report.parent_guide}</p>
-              </div>
-            )}
-
-            {/* 다시 대화 CTA */}
-            <Link
-              href="/child/chat"
-              className="block text-center py-4 rounded-2xl font-bold text-white transition-opacity active:opacity-80 shadow-sm"
-              style={{ background: "var(--hb-primary)" }}
-            >
-              🎙️ 오늘도 케이와 대화하기
-            </Link>
-
-            {/* AI 고지 */}
-            <p className="text-xs text-center px-2 pb-6" style={{ color: "var(--hb-muted)" }}>
-              이 리포트는 AI가 생성한 분석으로 참고용입니다. 아이의 실제 감정과 다를 수 있어요.
-            </p>
-          </div>
-
-        </div>
+      <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+        <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+          📊 1분 요약 리포트
+        </h3>
+        <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+          {report.parent_guide || "아이가 보낸 하루 대화에 대한 가이드 조언이 생성되지 않았습니다."}
+        </p>
       </div>
     </div>
+  );
+
+  // 상세 보기 탭
+  const Tab2 = () => {
+    const sections = [
+      { title: "오늘 하루와 주요 사건", body: report.summary_line || "특별한 사건 기록이 없습니다." },
+      { title: "그날의 기분", body: `오늘 아이의 기분 점수는 10점 만점에 ${report.mood_score}점입니다. (${moodLabel(report.mood_score)})` },
+      { title: "학교와 학원 이야기", body: dbCards.school_life || "오늘은 이 주제의 이야기가 없었어요." },
+      { title: "친구 이야기", body: dbCards.peer_relations || "오늘은 친구 관계에 대한 언급이 없었어요." },
+      { title: "요즘 관심사", body: dbCards.interests || "오늘은 관심사에 대한 뚜렷한 언급이 없었습니다." },
+      { title: "부모님과의 대화에 대한 신호", body: report.parent_guide || "부모님과의 교감 힌트 정보가 아직 생성되지 않았습니다." },
+    ];
+
+    return (
+      <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-5">
+        <h3 className="font-bold text-base -mb-2" style={{ color: "#1e1e2d" }}>
+          📄 상세 리포트
+        </h3>
+        {sections.map((section) => (
+          <div key={section.title} className="border-b border-gray-50 last:border-0 pb-3 last:pb-0">
+            <h4 className="font-bold text-sm mb-1.5" style={{ color: "#1e1e2d" }}>
+              {section.title}
+            </h4>
+            <p className="text-xs leading-relaxed" style={{ color: "#4b5563" }}>
+              {section.body}
+            </p>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // 추천 가이드 탭
+  const Tab3 = () => {
+    // parent_guide에서 질문 후보들을 파싱
+    const candidateSentences = report.parent_guide
+      ? report.parent_guide
+          .split(/[.\n]/)
+          .map((s) => s.trim())
+          .filter((s) => s.length > 5 && (s.includes("?") || s.endsWith("요") || s.endsWith("까")))
+      : [];
+
+    const watchOut = dbCards.recurring_stories || "아이가 대화 중 반복하여 꺼낸 특별한 주말/기타 일정 이야기가 확인되지 않았습니다.";
+    const comment = `오늘 아이는 ${dbCards.interests || "케이와의 소소한 일상"} 이야기에 가장 밝게 마음을 열고 대답했습니다.`;
+
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+          <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+            💬 부모 대화 실마리
+          </h3>
+          <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+            {report.parent_guide || "대화 실마리가 준비 중입니다."}
+          </p>
+        </div>
+
+        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+          <h3 className="font-bold text-base mb-3" style={{ color: "#1e1e2d" }}>
+            ❓ 부모용 추천 질문
+          </h3>
+          {candidateSentences.length > 0 ? (
+            <ul className="flex flex-col gap-2.5">
+              {candidateSentences.slice(0, 5).map((q, i) => (
+                <li key={i} className="flex gap-2 text-sm" style={{ color: "#3a3a4a" }}>
+                  <span style={{ color: "#22c55e" }}>✓</span>
+                  <span>{q}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-gray-400">생성된 질문 가이드가 아직 없습니다.</p>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+          <h3 className="font-bold text-base mb-2" style={{ color: "#3b82f6" }}>
+            👁️ 부모가 주의 깊게 볼 변화
+          </h3>
+          <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+            {watchOut}
+          </p>
+        </div>
+
+        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+          <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+            ✨ 오늘의 케이 코멘트
+          </h3>
+          <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+            {comment}
+          </p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderTab = () => {
+    if (activeTab === 1) return <Tab1 />;
+    if (activeTab === 2) return <Tab2 />;
+    return <Tab3 />;
+  };
+
+  return (
+    <DemoFrame>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
+        {/* 헤더 */}
+        <div
+          className="shrink-0 flex items-center justify-between px-4 py-4"
+          style={{ background: "#fafaf8" }}
+        >
+          <Link href="/parent/report" className="text-lg cursor-pointer" aria-label="뒤로가기">
+            ←
+          </Link>
+          <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>
+            리포트 상세
+          </span>
+          <span className="w-5" />
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {/* 탭 버튼들 */}
+          <div className="flex gap-2 px-4 pt-4 overflow-x-auto shrink-0 pb-1">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold text-left transition-colors cursor-pointer ${
+                  activeTab === tab.id ? "text-white" : "bg-white"
+                }`}
+                style={{
+                  background: activeTab === tab.id ? "#1a6b5a" : "#ffffff",
+                  color: activeTab === tab.id ? "#ffffff" : "#3a3a4a",
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 px-4 py-4">{renderTab()}</div>
+        </div>
+
+        <RealParentNav />
+      </div>
+    </DemoFrame>
   );
 }

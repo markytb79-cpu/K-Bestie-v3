@@ -1,0 +1,12 @@
+# Supabase 프로젝트 로컬 설정 (Edge Functions 배치용 최소 설정)
+# 참고: 이 파일은 supabase CLI 설정일 뿐 DB DDL을 실행하지 않는다.
+#       배치 Edge Function은 자체 BATCH_SECRET(Bearer) 인증을 쓰므로
+#       Supabase 게이트웨이의 기본 JWT 검증을 끈다(verify_jwt = false).
+#       그렇지 않으면 pg_cron이 보내는 Authorization: Bearer <BATCH_SECRET> 가
+#       JWT가 아니라서 게이트웨이 단계에서 401로 막힌다.
+
+[functions.daily-batch]
+verify_jwt = false
+
+[functions.weekly-batch]
+verify_jwt = false

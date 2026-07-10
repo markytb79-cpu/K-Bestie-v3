@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -8,6 +8,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   let body: { status: string };
   try {
     body = await req.json();
@@ -19,7 +23,6 @@ export async function PATCH(
     return NextResponse.json({ error: "Only '중지됨' update allowed" }, { status: 400 });
   }
 
-  const supabase = createServiceClient();
   const { error } = await supabase
     .from("parent_questions")
     .update({ status: "중지됨" })

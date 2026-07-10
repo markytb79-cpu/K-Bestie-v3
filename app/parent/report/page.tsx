@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import ParentTabBar from "@/components/ParentTabBar";
-import { BackArrow } from "@/components/ParentIcons";
+import { DemoFrame } from "@/app/demo/components/DemoFrame";
+import { RealParentNav } from "@/components/RealParentNav";
 
 interface Report {
   id: string;
@@ -13,7 +13,6 @@ interface Report {
   created_at: string;
   session: { started_at: string; turn_count: number } | null;
 }
-
 
 function moodEmoji(score: number) {
   if (score <= 3) return "😢";
@@ -54,121 +53,106 @@ export default function ParentReportPage() {
     }
 
     Promise.all([
-      fetch(`/api/parent/reports?childId=${id}`).then((r) => r.ok ? r.json() : null),
-      fetch(`/api/child/${encodeURIComponent(id)}`).then((r) => r.ok ? r.json() : null),
-    ]).then(([reportData, childData]) => {
-      setReports(reportData?.reports ?? []);
-      if (childData?.name) setChildName(childData.name);
-      else if (reportData?.childName) setChildName(reportData.childName);
-    }).catch(() => {})
-    .finally(() => setLoading(false));
+      fetch(`/api/parent/reports?childId=${id}`).then((r) => (r.ok ? r.json() : null)),
+      fetch(`/api/child/${encodeURIComponent(id)}`).then((r) => (r.ok ? r.json() : null)),
+    ])
+      .then(([reportData, childData]) => {
+        setReports(reportData?.reports ?? []);
+        if (childData?.name) setChildName(childData.name);
+        else if (reportData?.childName) setChildName(reportData.childName);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) {
     return (
-      <div className="min-h-dvh flex items-center justify-center" style={{ background: "var(--hb-bg)" }}>
-        <div className="w-8 h-8 rounded-full animate-pulse" style={{ background: "var(--hb-primary)" }} />
-      </div>
+      <DemoFrame>
+        <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
+          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
+        </div>
+      </DemoFrame>
     );
   }
 
   return (
-    <div
-      className="min-h-dvh pb-[72px] lg:pb-12 lg:pl-[240px] w-full transition-all"
-      style={{ background: "var(--hb-bg)" }}
-    >
-      {/* 헤더 */}
-      <div className="bg-white px-5 pt-12 pb-4 flex items-center gap-3">
-        <Link href="/parent/home" style={{ color: "var(--hb-primary)" }}>
-          <BackArrow />
-        </Link>
-        <div>
-          <p className="text-xs font-medium" style={{ color: "var(--hb-muted)" }}>
-            대화 리포트
-          </p>
-          <h1 className="text-[17px] font-bold text-gray-900">
-            {childName ? `${childName}이 리포트` : "리포트 📊"}
-          </h1>
+    <DemoFrame>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
+        {/* 헤더 */}
+        <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
+          <Link href="/parent/home" className="text-lg cursor-pointer" aria-label="뒤로가기">
+            ←
+          </Link>
+          <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>
+            {childName ? `${childName}의 대화 리포트` : "대화 리포트"}
+          </span>
+          <span className="text-xs font-semibold px-2 py-0.5 bg-gray-100 rounded-full text-gray-500">
+            {reports.length}개
+          </span>
         </div>
-        <span
-          className="ml-auto text-xs font-semibold px-2.5 py-1 rounded-full"
-          style={{ background: "var(--hb-primary-light)", color: "var(--hb-primary)" }}
-        >
-          {reports.length}개
-        </span>
-      </div>
 
-      <div className="max-w-6xl mx-auto px-4 py-4">
-        {reports.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-2xl" style={{ boxShadow: "var(--hb-shadow)" }}>
-            <p className="text-4xl mb-4">📭</p>
-            <p className="text-sm font-semibold text-gray-600">아직 대화 기록이 없어요</p>
-            <p className="text-xs mt-2" style={{ color: "var(--hb-muted)" }}>
-              케이와 대화하면 리포트가 생성됩니다
-            </p>
-            <Link
-              href="/child/chat"
-              className="inline-block mt-5 px-6 py-3 rounded-full text-sm font-bold text-white"
-              style={{ background: "var(--hb-primary)" }}
-            >
-              대화 시작하기
-            </Link>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {reports.map((r) => (
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+          {reports.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
+              <p className="text-4xl mb-4">📭</p>
+              <p className="text-sm font-semibold text-gray-600">아직 대화 기록이 없어요</p>
+              <p className="text-xs mt-2 text-gray-400">
+                케이와 대화하면 리포트가 생성됩니다
+              </p>
+            </div>
+          ) : (
+            reports.map((r) => (
               <Link
                 key={r.id}
                 href={`/parent/report/${r.id}`}
-                className="block bg-white rounded-2xl p-4 active:opacity-80 transition-all hover:shadow-md duration-200"
-                style={{ boxShadow: "var(--hb-shadow)" }}
+                className="block bg-white rounded-2xl p-4 active:scale-[0.99] transition-transform shadow-sm"
               >
                 <div className="flex items-center justify-between mb-2">
                   <div>
-                    <p className="text-xs font-medium" style={{ color: "var(--hb-muted)" }}>
+                    <p className="text-xs font-bold text-gray-500">
                       {formatDate(r.created_at)}
                     </p>
-                    <p className="text-[11px] mt-0.5" style={{ color: "var(--hb-muted)" }}>
+                    <p className="text-[10px] text-gray-400 mt-0.5">
                       {formatRelative(r.created_at)}
                       {r.session?.turn_count ? ` · 대화 ${r.session.turn_count}회` : ""}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-2xl">{moodEmoji(r.mood_score)}</span>
+                    <span className="text-xl select-none">{moodEmoji(r.mood_score)}</span>
                     <div
-                      className="flex items-baseline gap-0.5 px-2.5 py-1 rounded-full shrink-0"
+                      className="flex items-baseline gap-0.5 px-2.5 py-0.5 rounded-full shrink-0"
                       style={{ background: "#DCFCE7" }}
                     >
-                      <span className="text-sm font-bold" style={{ color: "#15803D" }}>
+                      <span className="text-xs font-bold" style={{ color: "#15803D" }}>
                         {r.mood_score}
                       </span>
-                      <span className="text-[10px]" style={{ color: "#4ADE80" }}>/10</span>
+                      <span className="text-[9px]" style={{ color: "#4ADE80" }}>/10</span>
                     </div>
                   </div>
                 </div>
 
-                <p className="text-sm font-semibold text-gray-800 leading-snug mb-2.5">
-                  {r.summary_line}
+                <p className="text-xs font-bold text-gray-800 leading-snug mb-2.5">
+                  "{r.summary_line}"
                 </p>
 
                 <div className="flex gap-1.5 flex-wrap">
-                  {r.emotion_tags.slice(0, 4).map((tag) => (
+                  {r.emotion_tags.slice(0, 3).map((tag) => (
                     <span
                       key={tag}
-                      className="px-2.5 py-0.5 rounded-full text-xs font-medium"
-                      style={{ background: "var(--hb-primary-light)", color: "var(--hb-primary)" }}
+                      className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                      style={{ background: "#fdf1ec", color: "#e8845a" }}
                     >
                       {tag}
                     </span>
                   ))}
                 </div>
               </Link>
-            ))}
-          </div>
-        )}
-      </div>
+            ))
+          )}
+        </div>
 
-      <ParentTabBar />
-    </div>
+        <RealParentNav active="리포트" />
+      </div>
+    </DemoFrame>
   );
 }
