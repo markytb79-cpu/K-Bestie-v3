@@ -32,6 +32,20 @@ const HOME_CARDS = [
   },
 ];
 
+const getFriendlyName = (fullName: string): string => {
+  if (!fullName) return "";
+  // 성을 제외한 이름만 추출 (2글자 이상이면 첫 글자 성 1자를 제외)
+  const nameOnly = fullName.length > 1 ? fullName.substring(1) : fullName;
+
+  // 받침 유무에 따른 호격조사 '아'/'야' 판별
+  const lastChar = nameOnly.charCodeAt(nameOnly.length - 1);
+  if (lastChar >= 0xac00 && lastChar <= 0xd7a3) {
+    const hasBatchim = (lastChar - 0xac00) % 28 > 0;
+    return `${nameOnly}${hasBatchim ? "아" : "야"}`;
+  }
+  return nameOnly;
+};
+
 export default function ChildHomePage() {
   const [child, setChild] = useState<ChildInfo | null>(null);
   const [noChild, setNoChild] = useState(false);
@@ -154,7 +168,7 @@ export default function ChildHomePage() {
               priority
             />
             <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
-              {child ? `안녕 ${child.name}! 오늘은 뭐 하고 놀까?` : "안녕! 오늘은 뭐 하고 놀까?"}
+              {child ? `안녕, ${getFriendlyName(child.name)}! 오늘은 뭐 하고 놀까?` : "안녕! 오늘은 뭐 하고 놀까?"}
             </h1>
             <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
               케이랑 같이 재미있게 보내봐요

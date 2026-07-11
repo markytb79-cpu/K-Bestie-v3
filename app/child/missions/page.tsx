@@ -515,13 +515,13 @@ function MissionInner() {
               if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); }
             }}
             placeholder="케이에게 답해봐..."
-            disabled={isDone || !isLive}
+            disabled={isDone}
             className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border border-gray-200 disabled:opacity-50"
             maxLength={200}
           />
           <button
             onClick={handleSendText}
-            disabled={isDone || !isLive || !textInput.trim()}
+            disabled={isDone || !textInput.trim()}
             className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-40 cursor-pointer"
             style={{ background: "#e8845a" }}
             aria-label="전송"

@@ -182,13 +182,6 @@ export default function ChatPage() {
     setMicEnabled(true);
   }, [setMicEnabled]);
 
-  const handleSendText = useCallback(() => {
-    const text = textInput.trim();
-    if (!text) return;
-    setTextInput("");
-    sendTypedText(text);
-  }, [textInput, sendTypedText]);
-
   const handleStart = useCallback(async () => {
     if (!childId) return;
     setReportDone(false);
@@ -206,6 +199,18 @@ export default function ChatPage() {
     }
     await startSession();
   }, [childId, startSession, getSupabase]);
+
+  const handleSendText = useCallback(async () => {
+    const text = textInput.trim();
+    if (!text) return;
+
+    if (statusRef.current === "idle" || statusRef.current === "error") {
+      await handleStart();
+    }
+
+    setTextInput("");
+    sendTypedText(text);
+  }, [textInput, handleStart, sendTypedText]);
 
   // 상태 플래그
   const isIdle = status === "idle";
@@ -380,13 +385,13 @@ export default function ChatPage() {
                 if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); }
               }}
               placeholder="케이에게 이야기해봐..."
-              disabled={!isLive}
+              disabled={isEnded || isConnecting}
               className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border border-gray-200 disabled:opacity-50"
               maxLength={200}
             />
             <button
               onClick={handleSendText}
-              disabled={!isLive || !textInput.trim()}
+              disabled={isEnded || isConnecting || !textInput.trim()}
               className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-40 cursor-pointer"
               style={{ background: "#e8845a" }}
               aria-label="전송"
