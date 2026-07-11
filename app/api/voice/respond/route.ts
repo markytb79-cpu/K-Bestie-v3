@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       contents,
       config: {
         systemInstruction: { parts: [{ text: FREE_CHAT_SYSTEM_PROMPT }] },
-        maxOutputTokens: 256,
+        maxOutputTokens: 1024,
       },
     });
 

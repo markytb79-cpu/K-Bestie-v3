@@ -55,7 +55,7 @@ ${nextQuestionText}
       contents,
       config: {
         systemInstruction: { parts: [{ text: systemInstruction }] },
-        maxOutputTokens: 256,
+        maxOutputTokens: 1024,
       },
     });
 
