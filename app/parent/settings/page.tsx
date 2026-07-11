@@ -741,17 +741,17 @@ export default function ParentSettingsPage() {
                     </div>
                   </div>
                 )}
-
-                {/* 로그아웃 */}
-                <button
-                  onClick={handleLogout}
-                  className="w-full py-3 rounded-2xl bg-white border border-red-200 text-red-500 text-xs font-bold active:scale-[0.98] transition-transform cursor-pointer shadow-sm mt-2"
-                >
-                  로그아웃
-                </button>
               </div>
             )}
           </div>
+
+          {/* 로그아웃 */}
+          <button
+            onClick={handleLogout}
+            className="w-full py-3.5 rounded-2xl bg-white border border-red-100 text-red-500 text-xs font-bold active:scale-[0.98] transition-transform cursor-pointer shadow-sm mt-3 shrink-0"
+          >
+            로그아웃
+          </button>
         </div>
 
         <RealParentNav active="설정" />

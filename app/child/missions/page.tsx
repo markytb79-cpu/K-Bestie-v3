@@ -6,7 +6,7 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
-import { useGeminiLive, type Turn } from "@/hooks/useGeminiLive";
+import { useVoiceChat, type Turn } from "@/hooks/useVoiceChat";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 
@@ -21,6 +21,12 @@ interface MissionQuestion {
 type QuestionState = "pending" | "answered" | "skipped" | "refused";
 
 const REQUIRED_COUNT = 5;
+
+// ⚠️⚠️⚠️ 임시 테스트용 우회 (TEMP TEST BYPASS) ⚠️⚠️⚠️
+// 운영시간 게이트를 항상 통과시켜 시간과 무관하게 미션 테스트 가능하게 함.
+// 되돌리려면(=원래 운영시간 제한 복원) 아래 값을 false로 바꾸면 됨.
+// 게이트 로직(getKstHour/currentRound) 자체는 삭제하지 않고 그대로 둠 — 우회는 사용 지점에서만 적용.
+const BYPASS_MISSION_TIME_GATE_FOR_TESTING = true;
 
 // 운영시간 게이트 (KST)
 function getKstHour(): number {
@@ -46,15 +52,19 @@ function MissionInner() {
   const [questions, setQuestions] = useState<MissionQuestion[]>([]);
   const [gauge, setGauge] = useState(0);
   const [completed, setCompleted] = useState(false);
+  const [mode, setMode] = useState<"voice" | "text">("voice");
+  const [textInput, setTextInput] = useState("");
 
   const sessionIdRef = useRef<string | null>(null);
   const questionsRef = useRef<MissionQuestion[]>([]);
   const currentIndexRef = useRef(0);
   const questionStatesRef = useRef<Record<string, QuestionState>>({});
   const askedIndexRef = useRef<number>(-1);
-  const injectedQuestionRef = useRef<string | null>(null);
   const completedRef = useRef(false);
   const bubbleRef = useRef<HTMLDivElement>(null);
+  // askQuestion은 useVoiceChat(speak) 생성 이후에만 얻을 수 있어 ref로 우회
+  // (handleTurnComplete는 훅 생성 전에 정의되어야 하므로 직접 참조 불가)
+  const askQuestionRef = useRef<((idx: number, customText?: string) => void) | undefined>(undefined);
 
   const saveMessage = useCallback((role: "child" | "k", content: string) => {
     const sid = sessionIdRef.current;
@@ -79,11 +89,6 @@ function MissionInner() {
   }, []);
 
   const handleTurnComplete = useCallback((turn: Turn) => {
-    if (turn.role === "child" && injectedQuestionRef.current && turn.text === injectedQuestionRef.current) {
-      injectedQuestionRef.current = null;
-      return;
-    }
-
     saveMessage(turn.role, turn.text);
 
     if (turn.role !== "child" || completedRef.current) return;
@@ -101,30 +106,110 @@ function MissionInner() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId: sid, questionId: question.id, answerText: turn.text }),
         });
-        if (!res.ok) return;
+        console.log("[MISSION-DEBUG] /api/mission/answer status:", res.status);
+        if (!res.ok) {
+          const errBody = await res.text().catch(() => "");
+          console.error("[MISSION-DEBUG] answer !res.ok, body:", errBody);
+          return;
+        }
         const data = await res.json();
+        console.log("[MISSION-DEBUG] answer response data:", data);
         questionStatesRef.current = data.questionStates ?? questionStatesRef.current;
         setGauge(data.validAnswerCount ?? 0);
 
         if (data.completed) {
+          console.log("[MISSION-DEBUG] mission completed, stopping ask loop");
           completedRef.current = true;
           setCompleted(true);
           return;
         }
 
         const next = pickNextIndex(questionStatesRef.current);
-        if (next === -1) return;
+        console.log("[MISSION-DEBUG] currentIndex:", currentIndexRef.current, "next:", next, "totalQuestions:", questionsRef.current.length);
+        if (next === -1) {
+          console.warn("[MISSION-DEBUG] pickNextIndex returned -1 — no more questions to ask, this is why K stays silent");
+          return;
+        }
+
         currentIndexRef.current = next;
-      } catch {
-        // 에러 시 재시도
+
+        // 다음 질문 유도 멘트 동적 생성 및 폴백
+        const nextQ = questionsRef.current[next];
+        if (nextQ) {
+          try {
+            console.log("[MISSION-DEBUG] Calling /api/mission/respond for contextual question induction...");
+            const respondRes = await fetch("/api/mission/respond", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                history: getTranscript(),
+                nextQuestionText: nextQ.question_text,
+              }),
+            });
+            if (respondRes.ok) {
+              const respondData = await respondRes.json();
+              if (respondData.text) {
+                console.log("[MISSION-DEBUG] Contextual question received:", respondData.text);
+                askQuestionRef.current?.(next, respondData.text);
+                return;
+              }
+            }
+          } catch (respondErr) {
+            console.error("[MISSION-DEBUG] Failed to fetch contextual response:", respondErr);
+          }
+          // 실패 시 순정 질문 텍스트로 폴백
+          console.log("[MISSION-DEBUG] Falling back to standard question text:", nextQ.question_text);
+          askQuestionRef.current?.(next);
+        }
+      } catch (err) {
+        console.error("[MISSION-DEBUG] handleTurnComplete caught exception:", err);
       }
     })();
   }, [saveMessage, pickNextIndex]);
 
-  const { status, error, transcript, startSession, stopSession, sendText } = useGeminiLive({
+  // Gemini Live 네이티브 오디오 폐기 — STT(/api/mission/stt 주기호출)+텍스트+TTS(Wavenet) 파이프라인.
+  // 케이 발화는 미리 정해진 질문 문구를 speak()로 그대로 TTS 재생(LLM 생성 없음).
+  const {
+    status, transcript, interimChildText,
+    startSession, stopSession, speak, sendTypedText, setMicEnabled,
+    getTranscript,
+  } = useVoiceChat({
     onTurnComplete: handleTurnComplete,
-    sttMode: "gcp",
   });
+
+  const askQuestion = useCallback((idx: number, customText?: string) => {
+    console.log("[MISSION-DEBUG] askQuestion called, idx:", idx, "customText:", customText);
+    const q = questionsRef.current[idx];
+    if (!q) return;
+    askedIndexRef.current = idx;
+    const textToSpeak = customText || q.question_text;
+    void speak(textToSpeak).then(() => {
+      console.log("[MISSION-DEBUG] speak() finished for idx:", idx);
+    });
+  }, [speak]);
+  askQuestionRef.current = askQuestion;
+
+  const switchToText = useCallback(() => {
+    setMode("text");
+    setMicEnabled(false);
+  }, [setMicEnabled]);
+
+  const switchToVoice = useCallback(() => {
+    setMode("voice");
+    setMicEnabled(true);
+  }, [setMicEnabled]);
+
+  const handleSendText = useCallback(() => {
+    const text = textInput.trim();
+    if (!text) return;
+    setTextInput("");
+    sendTypedText(text);
+  }, [textInput, sendTypedText]);
+
+  const handleClose = useCallback(() => {
+    stopSession();
+    router.replace("/child/home");
+  }, [stopSession, router]);
 
   useEffect(() => {
     const qpChild = searchParams.get("childId");
@@ -138,7 +223,10 @@ function MissionInner() {
 
     const hour = getKstHour();
     const qpRound = searchParams.get("roundType") as RoundType | null;
-    const round: RoundType | null = qpRound ?? currentRound(hour);
+    // ⚠️ TEMP TEST BYPASS: BYPASS_MISSION_TIME_GATE_FOR_TESTING가 true면 게이트 결과가 null이어도
+    // "common" 라운드로 대체해 항상 통과시킴. 원복하려면 파일 상단 플래그를 false로.
+    const round: RoundType | null =
+      qpRound ?? currentRound(hour) ?? (BYPASS_MISSION_TIME_GATE_FOR_TESTING ? "common" : null);
     if (!round) {
       setPhase("closed");
       return;
@@ -183,16 +271,14 @@ function MissionInner() {
     }
   }, [phase, status, startSession]);
 
+  // 세션 시작 후 최초 1회만 첫 질문을 묻는다. 이후 질문은 handleTurnComplete에서
+  // 답변 처리 완료 시점에 askQuestionRef를 통해 직접 트리거된다(ref 변화는 effect를
+  // 재실행시키지 않으므로, "다음 질문"을 이 effect가 알아채길 기다리면 안 됨).
   useEffect(() => {
     if (status !== "live" || completed) return;
-    const idx = currentIndexRef.current;
-    if (askedIndexRef.current === idx) return;
-    const q = questionsRef.current[idx];
-    if (!q) return;
-    askedIndexRef.current = idx;
-    injectedQuestionRef.current = q.question_text;
-    sendText(q.question_text);
-  }, [status, transcript, completed, sendText]);
+    if (askedIndexRef.current !== -1) return;
+    askQuestion(currentIndexRef.current);
+  }, [status, completed, askQuestion]);
 
   useEffect(() => {
     if (completed) stopSession();
@@ -200,7 +286,7 @@ function MissionInner() {
 
   useEffect(() => {
     bubbleRef.current?.scrollTo({ top: bubbleRef.current.scrollHeight, behavior: "smooth" });
-  }, [transcript]);
+  }, [transcript, interimChildText]);
 
   if (phase === "loading") {
     return (
@@ -336,72 +422,121 @@ function MissionInner() {
             </div>
           ))
         )}
+        {/* 아이가 말하는 도중의 실시간 중간 자막 — 확정 전이라 옅게 표시 */}
+        {interimChildText && (
+          <div
+            className="max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed self-end opacity-60"
+            style={{
+              background: "#3b82f6",
+              color: "#ffffff",
+              borderRadius: "16px 16px 2px 16px",
+            }}
+          >
+            {interimChildText}
+          </div>
+        )}
       </div>
 
       {/* 하단 버튼 바 */}
-      <div className="flex items-center justify-center gap-8 py-5 shrink-0 bg-white border-t border-gray-50">
-        <button
-          disabled
-          className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg opacity-50 cursor-not-allowed"
-          aria-label="텍스트로 대화하기"
-        >
-          💬
-        </button>
-        
-        {isConnecting && (
-          <button disabled className="w-16 h-16 rounded-full flex items-center justify-center bg-gray-100 shadow-sm cursor-not-allowed">
-            <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-          </button>
-        )}
-
-        {isLive && !isDone && (
-          <div className="relative flex items-center justify-center">
-            <div className="absolute w-16 h-16 rounded-full bg-orange-400/20 animate-ping pointer-events-none" />
-            <button
-              onClick={() => stopSession()}
-              className="relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer bg-gradient-to-br from-orange-400 to-orange-500"
-              aria-label="마이크 끄기"
-            >
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
-                <rect x="6" y="6" width="12" height="12" rx="2" />
-              </svg>
-            </button>
-          </div>
-        )}
-
-        {!isLive && !isConnecting && !isDone && (
+      {mode === "voice" ? (
+        <div className="flex items-center justify-center gap-8 py-5 shrink-0 bg-white border-t border-gray-50">
           <button
-            onClick={() => startSession()}
-            className="w-16 h-16 rounded-full flex items-center justify-center text-2xl text-white shadow-md transition-transform active:scale-95 cursor-pointer"
-            style={{ background: "#e8845a" }}
-            aria-label="마이크 켜기"
+            onClick={switchToText}
+            className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
+            aria-label="텍스트로 대화하기"
           >
-            🎤
+            💬
           </button>
-        )}
 
-        {isDone && (
+          {isConnecting && (
+            <button disabled className="w-16 h-16 rounded-full flex items-center justify-center bg-gray-100 shadow-sm cursor-not-allowed">
+              <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+            </button>
+          )}
+
+          {isLive && !isDone && (
+            <div className="relative flex items-center justify-center">
+              <div className="absolute w-16 h-16 rounded-full bg-orange-400/20 animate-ping pointer-events-none" />
+              <button
+                onClick={() => stopSession()}
+                className="relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer bg-gradient-to-br from-orange-400 to-orange-500"
+                aria-label="마이크 끄기"
+              >
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              </button>
+            </div>
+          )}
+
+          {!isLive && !isConnecting && !isDone && (
+            <button
+              onClick={() => startSession()}
+              className="w-16 h-16 rounded-full flex items-center justify-center text-2xl text-white shadow-md transition-transform active:scale-95 cursor-pointer"
+              style={{ background: "#e8845a" }}
+              aria-label="마이크 켜기"
+            >
+              🎤
+            </button>
+          )}
+
+          {isDone && (
+            <button
+              onClick={() => router.replace("/child/home")}
+              className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
+              style={{ background: "#1a6b5a" }}
+              aria-label="홈으로 이동"
+            >
+              ✕
+            </button>
+          )}
+
           <button
-            onClick={() => router.replace("/child/home")}
-            className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
-            style={{ background: "#1a6b5a" }}
-            aria-label="홈으로 이동"
+            onClick={handleClose}
+            className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
+            aria-label="닫기"
           >
             ✕
           </button>
-        )}
-
-        <button
-          onClick={() => {
-            stopSession();
-            router.replace("/child/home");
-          }}
-          className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
-          aria-label="닫기"
-        >
-          ✕
-        </button>
-      </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 py-3 px-3 shrink-0 bg-white border-t border-gray-50">
+          <button
+            onClick={switchToVoice}
+            className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
+            aria-label="음성으로 전환"
+          >
+            🎤
+          </button>
+          <input
+            value={textInput}
+            onChange={(e) => setTextInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); }
+            }}
+            placeholder="케이에게 답해봐..."
+            disabled={isDone || !isLive}
+            className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border border-gray-200 disabled:opacity-50"
+            maxLength={200}
+          />
+          <button
+            onClick={handleSendText}
+            disabled={isDone || !isLive || !textInput.trim()}
+            className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-40 cursor-pointer"
+            style={{ background: "#e8845a" }}
+            aria-label="전송"
+          >
+            ➤
+          </button>
+          <button
+            onClick={handleClose}
+            className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
+            aria-label="닫기"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <RealChildNav active="미션" />
     </div>

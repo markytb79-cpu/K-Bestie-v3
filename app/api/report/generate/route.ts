@@ -60,21 +60,74 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ reportId: null, skipped: true });
   }
 
-  // 3. Gemma로 리포트 생성
+  // 3. 리포트 생성 (재시도 및 폴백 탑재)
   const transcriptText = transcript
     .map((t) => `${t.role === "child" ? "아이" : "케이"}: ${t.text}`)
     .join("\n");
   const prompt = REPORT_PROMPT_TEMPLATE.replace("{{TRANSCRIPT}}", transcriptText);
 
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMMA_API_KEY! });
-  const result = await ai.models.generateContent({
-    model: reportModel.modelId,
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: {
-      responseMimeType: "application/json",
-      maxOutputTokens: reportModel.maxOutputTokens,
-    },
-  });
+  const apiKey = process.env.GEMMA_API_KEY!;
+  const ai = new GoogleGenAI({ apiKey });
+
+  let resultText = "";
+  let success = false;
+  const RETRY_DELAYS = [0, 3000, 5000];
+
+  // 3-1. Gemma 4 모델로 재시도 루프
+  for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
+    const delay = RETRY_DELAYS[attempt];
+    if (delay > 0) {
+      console.log(`[report/generate] Waiting ${delay}ms before retry attempt ${attempt + 1}...`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+
+    try {
+      console.log(`[report/generate] Trying model: ${reportModel.modelId} (Attempt ${attempt + 1}/${RETRY_DELAYS.length})`);
+      const response = await ai.models.generateContent({
+        model: reportModel.modelId,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: "application/json",
+          maxOutputTokens: reportModel.maxOutputTokens,
+        },
+      });
+
+      resultText = (response.text ?? "").trim();
+      // JSON 문법 유효성 사전 검사
+      JSON.parse(resultText);
+      success = true;
+      console.log(`[report/generate] Success with model: ${reportModel.modelId}`);
+      break;
+    } catch (err) {
+      console.error(
+        `[report/generate] Attempt ${attempt + 1} failed for ${reportModel.modelId}. Error:`,
+        (err as Error).message
+      );
+    }
+  }
+
+  // 3-2. 실패 시 gemini-2.5-flash 모델로 폴백
+  if (!success) {
+    console.warn(`[report/generate] Gemma 4 failed completely. Falling back to gemini-2.5-flash...`);
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: "application/json",
+          maxOutputTokens: 1024,
+        },
+      });
+
+      resultText = (response.text ?? "").trim();
+      JSON.parse(resultText);
+      success = true;
+      console.log(`[report/generate] Success with fallback model: gemini-2.5-flash`);
+    } catch (fallbackErr) {
+      console.error(`[report/generate] Fallback model also failed:`, (fallbackErr as Error).message);
+      return NextResponse.json({ error: "Gemma 4 and fallback model both failed to generate valid report" }, { status: 500 });
+    }
+  }
 
   let report: {
     summary_line: string;
@@ -85,10 +138,9 @@ export async function POST(req: NextRequest) {
     dashboard_cards?: any;
   };
   try {
-    const raw = result.text ?? "{}";
-    report = JSON.parse(raw);
+    report = JSON.parse(resultText);
   } catch {
-    return NextResponse.json({ error: "Gemma returned invalid JSON", raw: result.text }, { status: 500 });
+    return NextResponse.json({ error: "Report JSON parsing failed", raw: resultText }, { status: 500 });
   }
 
   // mood_score 범위 보정

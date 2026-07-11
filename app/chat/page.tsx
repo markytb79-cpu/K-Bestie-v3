@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { useGeminiLive, type Turn } from "@/hooks/useGeminiLive";
+import { useVoiceChat, type Turn } from "@/hooks/useVoiceChat";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
 
@@ -19,37 +19,45 @@ export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [reportDone, setReportDone] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"voice" | "text">("voice");
+  const [textInput, setTextInput] = useState("");
 
-  const pendingTextRef = useRef<string | null>(null);
   const voiceBubbleRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const statusRef = useRef<string>("idle");
+  // respondText는 훅 생성 이후에만 얻을 수 있어 ref로 우회(핸들러는 훅 생성 전에 정의 필요)
+  const respondTextRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
-  // 실시간 메시지 저장
+  // 실시간 메시지 저장 + 아이 발화 시 케이 텍스트 응답 생성(음성 없음, 텍스트만)
   const handleTurnComplete = useCallback((turn: Turn) => {
     const sid = sessionIdRef.current;
-    if (!sid) return;
-    fetch("/api/chat/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: sid, role: turn.role, content: turn.text }),
-    }).catch(() => {});
+    if (sid) {
+      fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: sid, role: turn.role, content: turn.text }),
+      }).catch(() => {});
+    }
+    if (turn.role === "child") {
+      void respondTextRef.current?.();
+    }
   }, []);
 
   const {
     status: rawStatus,
-    error,
     transcript,
+    interimChildText,
     startSession,
     stopSession,
     getTranscript,
     reset,
-    sendText,
-    setAudioMuted,
+    respondText,
+    sayText,
+    sendTypedText,
     setMicEnabled,
-    appendTurn,
-  } = useGeminiLive({ onTurnComplete: handleTurnComplete, sttMode: "gcp" });
+  } = useVoiceChat({ onTurnComplete: handleTurnComplete });
+  respondTextRef.current = respondText;
 
   const status = mounted ? rawStatus : "idle";
 
@@ -58,12 +66,11 @@ export default function ChatPage() {
     statusRef.current = status;
   }, [status]);
 
-  // 하드 리밋 세션 중단 핸들러
+  // 하드 리밋 세션 중단 핸들러 — 자유대화는 케이가 음성으로 말하지 않음(텍스트만) → 세션 종료
   const triggerHardLimitStop = useCallback((noticeText: string) => {
-    appendTurn({ role: "k", text: noticeText });
-    handleTurnComplete({ role: "k", text: noticeText });
+    sayText(noticeText);
     stopSession();
-  }, [appendTurn, handleTurnComplete, stopSession]);
+  }, [sayText, stopSession]);
 
   // 시간 제한 하드 리밋 감지
   useEffect(() => {
@@ -144,13 +151,6 @@ export default function ChatPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (status === "live" && pendingTextRef.current) {
-      sendText(pendingTextRef.current);
-      pendingTextRef.current = null;
-    }
-  }, [status, sendText]);
-
   // 대화 종료 시 리포트 자동 생성
   useEffect(() => {
     if (status !== "ended" || !sessionId) return;
@@ -170,7 +170,24 @@ export default function ChatPage() {
 
   useEffect(() => {
     voiceBubbleRef.current?.scrollTo({ top: voiceBubbleRef.current.scrollHeight, behavior: "smooth" });
-  }, [transcript]);
+  }, [transcript, interimChildText]);
+
+  const switchToText = useCallback(() => {
+    setMode("text");
+    setMicEnabled(false);
+  }, [setMicEnabled]);
+
+  const switchToVoice = useCallback(() => {
+    setMode("voice");
+    setMicEnabled(true);
+  }, [setMicEnabled]);
+
+  const handleSendText = useCallback(() => {
+    const text = textInput.trim();
+    if (!text) return;
+    setTextInput("");
+    sendTypedText(text);
+  }, [textInput, sendTypedText]);
 
   const handleStart = useCallback(async () => {
     if (!childId) return;
@@ -194,7 +211,7 @@ export default function ChatPage() {
   const isIdle = status === "idle";
   const isConnecting = status === "connecting";
   const isLive = status === "live";
-  const isEnded = status === "ended" || status === "ending";
+  const isEnded = status === "ended";
 
   const handleMicToggle = useCallback(async () => {
     if (isLive) {
@@ -283,61 +300,111 @@ export default function ChatPage() {
               </div>
             ))
           )}
+          {interimChildText && (
+            <div
+              className="max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed self-end opacity-60"
+              style={{ background: "#3b82f6", color: "#ffffff", borderRadius: "16px 16px 2px 16px" }}
+            >
+              {interimChildText}
+            </div>
+          )}
         </div>
 
         {/* 하단 버튼 바 */}
-        <div className="flex items-center justify-center gap-8 py-5 shrink-0 bg-white border-t border-gray-50">
-          <button
-            disabled
-            className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg opacity-50 cursor-not-allowed"
-            aria-label="텍스트로 대화하기"
-          >
-            💬
-          </button>
-
-          {isConnecting && (
-            <button disabled className="w-16 h-16 rounded-full flex items-center justify-center bg-gray-100 shadow-sm cursor-not-allowed">
-              <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+        {mode === "voice" ? (
+          <div className="flex items-center justify-center gap-8 py-5 shrink-0 bg-white border-t border-gray-50">
+            <button
+              onClick={switchToText}
+              className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
+              aria-label="텍스트로 대화하기"
+            >
+              💬
             </button>
-          )}
 
-          {isLive && (
-            <div className="relative flex items-center justify-center">
-              <div className="absolute w-16 h-16 rounded-full bg-orange-400/20 animate-ping pointer-events-none" />
+            {isConnecting && (
+              <button disabled className="w-16 h-16 rounded-full flex items-center justify-center bg-gray-100 shadow-sm cursor-not-allowed">
+                <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+              </button>
+            )}
+
+            {isLive && (
+              <div className="relative flex items-center justify-center">
+                <div className="absolute w-16 h-16 rounded-full bg-orange-400/20 animate-ping pointer-events-none" />
+                <button
+                  onClick={handleMicToggle}
+                  className="relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer bg-gradient-to-br from-orange-400 to-orange-500"
+                  aria-label="마이크 끄기"
+                >
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
+                    <rect x="6" y="6" width="12" height="12" rx="2" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            {!isLive && !isConnecting && (
               <button
                 onClick={handleMicToggle}
-                className="relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer bg-gradient-to-br from-orange-400 to-orange-500"
-                aria-label="마이크 끄기"
+                className="w-16 h-16 rounded-full flex items-center justify-center text-2xl text-white shadow-md transition-transform active:scale-95 cursor-pointer"
+                style={{ background: "#e8845a" }}
+                aria-label="마이크 켜기"
               >
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
-                  <rect x="6" y="6" width="12" height="12" rx="2" />
-                </svg>
+                🎤
               </button>
-            </div>
-          )}
+            )}
 
-          {!isLive && !isConnecting && (
             <button
-              onClick={handleMicToggle}
-              className="w-16 h-16 rounded-full flex items-center justify-center text-2xl text-white shadow-md transition-transform active:scale-95 cursor-pointer"
-              style={{ background: "#e8845a" }}
-              aria-label="마이크 켜기"
+              onClick={() => {
+                if (isLive) stopSession();
+                router.replace("/child/home");
+              }}
+              className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
+              aria-label="닫기"
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 py-3 px-3 shrink-0 bg-white border-t border-gray-50">
+            <button
+              onClick={switchToVoice}
+              className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
+              aria-label="음성으로 전환"
             >
               🎤
             </button>
-          )}
-
-          <button
-            onClick={() => {
-              if (isLive) stopSession();
-              router.replace("/child/home");
-            }}
-            className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
-            aria-label="닫기"
-          >
-            ✕
-          </button>
-        </div>
+            <input
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); }
+              }}
+              placeholder="케이에게 이야기해봐..."
+              disabled={!isLive}
+              className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border border-gray-200 disabled:opacity-50"
+              maxLength={200}
+            />
+            <button
+              onClick={handleSendText}
+              disabled={!isLive || !textInput.trim()}
+              className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-40 cursor-pointer"
+              style={{ background: "#e8845a" }}
+              aria-label="전송"
+            >
+              ➤
+            </button>
+            <button
+              onClick={() => {
+                if (isLive) stopSession();
+                router.replace("/child/home");
+              }}
+              className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
+              aria-label="닫기"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         <RealChildNav active="대화" />
       </div>

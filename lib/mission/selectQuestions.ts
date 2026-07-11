@@ -138,6 +138,19 @@ export async function selectQuestions(
   // 5. 나머지로 채우기
   add(rest.map((q) => q.id));
 
+  // [보정] 만약 주기 필터로 인해 picked 질문 개수가 5개(REQUIRED_COUNT) 미만인 경우,
+  // 학년 조건에 해당하는 전체 후보(candidates) 중에서 아직 픽업되지 않은 질문들을
+  // 가장 과거에 출제되었던 순(asked_at이 없거나 오래된 순)으로 정렬하여 5개를 충족할 때까지 강제로 채웁니다.
+  if (picked.length < REQUIRED_COUNT) {
+    const remainingCandidates = candidates.filter((q) => !pickedSet.has(q.id));
+    const sortedRemaining = remainingCandidates.sort((a, b) => {
+      const aTime = lastAskedAt.get(a.id) ?? 0;
+      const bTime = lastAskedAt.get(b.id) ?? 0;
+      return aTime - bTime;
+    });
+    add(sortedRemaining.map((q) => q.id));
+  }
+
   // 기분체크가 하나도 없고 후보에 남아있다면(이미 add로 처리됐지만) 보정
   if (moodChecks.length >= MIN_MOOD_CHECK) {
     const hasMood = picked.some((id) => moodChecks.some((m) => m.id === id));

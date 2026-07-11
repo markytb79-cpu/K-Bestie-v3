@@ -50,6 +50,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   const [status, setStatus] = useState<SessionStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<Turn[]>([]);
+  // 브라우저 SpeechRecognition 폴백의 중간(interim) 전사 — 아이가 말하는 도중 실시간 자막용.
+  // outputAudioTranscription(outTx) 이벤트와 무관하게, 브라우저 자체 인식 결과로만 갱신/확정된다.
+  const [interimChildText, setInterimChildText] = useState("");
 
   const statusRef     = useRef<SessionStatus>("idle");
   const transcriptRef = useRef<Turn[]>([]);
@@ -200,6 +203,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     }
 
     childAudioChunksRef.current = [];
+    setInterimChildText("");
   }
 
   const initSpeechRecognition = useCallback(() => {
@@ -213,7 +217,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     rec.lang = "ko-KR";
 
     rec.onresult = (event: any) => {
+      // Gemini 자체 inputTranscription이 이 턴에 대해 이미 도착했다면 폴백은 관여하지 않음(중복 방지)
       if (hasLiveInputTxRef.current) return;
+
       let interimTranscript = "";
       let finalTranscript = "";
 
@@ -229,6 +235,20 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       if (text.trim()) {
         speechHistoryRef.current = text.trim();
         console.log("[STT Fallback] interim text:", speechHistoryRef.current);
+      }
+
+      // 실시간 중간 자막 — outTx(케이 응답) 이벤트를 기다리지 않고 화면에 바로 반영
+      if (interimTranscript.trim() || finalTranscript.trim()) {
+        setInterimChildText((finalTranscript || interimTranscript).trim());
+      }
+
+      // 브라우저 자체 무음/구간 감지로 이 발화가 끝났다고 판단되면 즉시 확정 flush
+      // (Gemini의 outputTranscription/turnComplete를 기다리지 않음 — 그게 안 와서 자막이 안 뜨던 문제의 핵심 수정)
+      if (finalTranscript.trim()) {
+        const finalText = finalTranscript.trim();
+        speechHistoryRef.current = "";
+        setInterimChildText("");
+        flushChildTurn(finalText);
       }
     };
 
@@ -374,6 +394,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
               }
               hasLiveInputTxRef.current = false;
               speechHistoryRef.current = "";
+              setInterimChildText("");
             }
           },
           onerror: (e: ErrorEvent) => {
@@ -488,6 +509,20 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     return true;
   }, []);
 
+  /** 케이가 특정 문장을 그대로 소리내어 말하게 함(미션 질문 등). sendText와 달리
+   *  아이 발화로 취급하지 않는다 — 화면에는 케이(K) 말풍선으로 표시되고, onTurnComplete도
+   *  role:"k"로 호출되어(child 판정/미션 답변 로직을 타지 않음) 대화 로그에는 남되 오답 처리되지 않는다. */
+  const speakAsK = useCallback((text: string): boolean => {
+    if (!sessionRef.current || statusRef.current !== "live") return false;
+    appendTurn({ role: "k", text });
+    onTurnCompleteRef.current?.({ role: "k", text });
+    sessionRef.current.sendClientContent({
+      turns: [{ role: "user", parts: [{ text: `다음 문장을 자연스럽게 소리내어 그대로 말해줘: "${text}"` }] }],
+      turnComplete: true,
+    });
+    return true;
+  }, []);
+
   useEffect(() => {
     return () => {
       teardown();
@@ -495,8 +530,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   }, []);
 
   return {
-    status, error, transcript,
+    status, error, transcript, interimChildText,
     startSession, stopSession, pauseSession, getTranscript, reset,
-    sendText, setAudioMuted, setMicEnabled, appendTurn,
+    sendText, speakAsK, setAudioMuted, setMicEnabled, appendTurn,
   };
 }

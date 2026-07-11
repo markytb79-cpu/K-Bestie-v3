@@ -73,7 +73,7 @@ export const REPORT_MODELS: Record<string, ReportModelConfig> = {
 
 // ── 현재 활성 모델 (여기만 바꾸면 전체 적용) ─────────────────
 export const ACTIVE_VOICE_MODEL_ID = "gemini-2.5-flash-native-audio-preview-12-2025";
-export const ACTIVE_REPORT_MODEL_ID = "gemini-2.5-flash";
+export const ACTIVE_REPORT_MODEL_ID = "gemma-4-31b-it";
 
 export function getActiveVoiceModel(): VoiceModelConfig {
   const config = VOICE_MODELS[ACTIVE_VOICE_MODEL_ID];
