@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 
 // 일반 Cloud Text-to-Speech Wavenet 보이스만 사용한다.
 // Gemini 계열 TTS(토큰 과금, 매우 비쌈)는 절대 쓰지 않는다 — text:synthesize REST 고정.
-const TTS_VOICE_NAME = "ko-KR-Wavenet-A"; // 케이(밝고 친근한 톤)
+const TTS_VOICE_NAME = "ko-KR-Neural2-A"; // 케이(밝고 친근한 톤)
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();

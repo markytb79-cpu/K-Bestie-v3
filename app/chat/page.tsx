@@ -264,16 +264,14 @@ export default function ChatPage() {
           </div>
 
           <div className="flex justify-center mb-4">
-            <div className="w-24 h-24 rounded-full bg-white shadow-sm flex items-center justify-center overflow-hidden border border-gray-50">
-              <Image
-                src="/Images/mascot/mascot-standing.png"
-                alt="케이 마스코트"
-                width={80}
-                height={80}
-                className="object-contain"
-                priority
-              />
-            </div>
+            <Image
+              src="/Images/mascot/mascot-standing.png"
+              alt="케이 마스코트"
+              width={96}
+              height={96}
+              className="object-contain"
+              priority
+            />
           </div>
         </div>
 
