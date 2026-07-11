@@ -229,11 +229,11 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     const trimmed = text.trim();
     console.log("[MISSION-DEBUG] speak() invoked, text:", trimmed);
     if (!trimmed) return;
-    appendTurn({ role: "k", text: trimmed });
-    onTurnCompleteRef.current?.({ role: "k", text: trimmed });
 
     speakingRef.current = true;
     setIsSpeaking(true);
+    let spoken = false;
+
     try {
       const res = await fetch("/api/voice/tts", {
         method: "POST",
@@ -244,24 +244,34 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       if (!res.ok) {
         const errBody = await res.text().catch(() => "");
         console.error("[MISSION-DEBUG] tts !res.ok, body:", errBody);
-        return;
+        throw new Error("TTS response not ok");
       }
       const data = await res.json();
       if (!data.audioContent) {
         console.error("[MISSION-DEBUG] tts response missing audioContent:", data);
-        return;
+        throw new Error("TTS audioContent missing");
       }
 
       const audio = new Audio(`data:${data.mimeType ?? "audio/mp3"};base64,${data.audioContent}`);
       audioElRef.current = audio;
+
+      // 음성 재생 개시 시점에 맞추어 자막 출력
+      appendTurn({ role: "k", text: trimmed });
+      onTurnCompleteRef.current?.({ role: "k", text: trimmed });
+      spoken = true;
+
       await new Promise<void>((resolve) => {
         audio.onended = () => resolve();
         audio.onerror = () => resolve();
         audio.play().catch((e) => { console.error("[MISSION-DEBUG] audio.play() rejected:", e); resolve(); });
       });
     } catch (err) {
-      // TTS 실패해도 텍스트 자막은 이미 표시됨 — 대화 흐름은 계속
       console.error("[MISSION-DEBUG] speak() caught exception:", err);
+      // TTS가 실패하더라도 자막은 반드시 출력
+      if (!spoken) {
+        appendTurn({ role: "k", text: trimmed });
+        onTurnCompleteRef.current?.({ role: "k", text: trimmed });
+      }
     } finally {
       speakingRef.current = false;
       setIsSpeaking(false);

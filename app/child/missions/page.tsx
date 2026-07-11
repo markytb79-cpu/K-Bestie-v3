@@ -250,6 +250,9 @@ function MissionInner() {
         setSessionId(data.sessionId);
         sessionIdRef.current = data.sessionId;
         const qs: MissionQuestion[] = data.questions ?? [];
+        if (qs.length > 0) {
+          qs[0].question_text = "안녕~ 난 케이야. 넌 이름이 뭐니?";
+        }
         setQuestions(qs);
         questionsRef.current = qs;
         const initStates: Record<string, QuestionState> = {};
