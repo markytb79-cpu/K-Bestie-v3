@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
+import { useDemoView } from "@/app/demo/components/DemoViewContext";
 
 type EmotionLevel = "safe" | "warning" | "danger";
 
@@ -44,6 +45,7 @@ function moodLabel(score: number): string {
 }
 
 export default function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { view } = useDemoView();
   const { id } = use(params);
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
@@ -235,9 +237,17 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           <span className="w-5" />
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div
+          className={`flex-1 min-h-0 overflow-y-auto ${view === "tablet" ? "flex gap-6 px-4 pt-4" : ""}`}
+        >
           {/* 탭 버튼들 */}
-          <div className="flex gap-2 px-4 pt-4 overflow-x-auto shrink-0 pb-1">
+          <div
+            className={
+              view === "tablet"
+                ? "flex flex-col gap-2 w-40 shrink-0"
+                : "flex gap-2 px-4 pt-4 overflow-x-auto shrink-0 pb-1"
+            }
+          >
             {TABS.map((tab) => (
               <button
                 key={tab.id}

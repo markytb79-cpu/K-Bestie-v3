@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { DemoViewProvider } from "@/app/demo/components/DemoViewContext";
 
 export const metadata: Metadata = {
   title: "내친구 케이",
@@ -27,7 +28,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko" suppressHydrationWarning>
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <DemoViewProvider>{children}</DemoViewProvider>
+      </body>
     </html>
   );
 }

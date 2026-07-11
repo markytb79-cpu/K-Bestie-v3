@@ -7,6 +7,7 @@ import { useStore } from "@/hooks/useStore";
 import { createClient } from "@/lib/supabase/client";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
+import { useDemoView } from "@/app/demo/components/DemoViewContext";
 
 type EmotionLevel = "safe" | "warning" | "danger";
 
@@ -38,6 +39,7 @@ const EMOTION_HINT_MAP: Record<EmotionLevel, { emoji: string; label: string }> =
 };
 
 export default function ParentHomePage() {
+  const { view } = useDemoView();
   const store = useStore();
   const children = store.children;
 
@@ -611,7 +613,7 @@ export default function ParentHomePage() {
               <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 mb-8">
+            <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3 mb-8`}>
               {cardList.map((card, i) => (
                 <div key={i} className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col justify-between">
                   <div>
