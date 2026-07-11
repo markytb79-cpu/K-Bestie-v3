@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/hooks/useStore";
 import { createClient } from "@/lib/supabase/client";
@@ -364,8 +365,15 @@ export default function ParentSettingsPage() {
           className="shrink-0 flex items-center justify-center px-4 py-4"
           style={{ background: "#fafaf8" }}
         >
-          <Link href="/parent/home" className="font-bold text-sm cursor-pointer" style={{ color: "#1a6b5a" }}>
-            설정
+          <Link href="/parent/home" className="cursor-pointer">
+            <Image
+              src="/Images/logo/Logo.png"
+              alt="내친구 케이"
+              width={84}
+              height={24}
+              className="object-contain"
+              priority
+            />
           </Link>
         </div>
 

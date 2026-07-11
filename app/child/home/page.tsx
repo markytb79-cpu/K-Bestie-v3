@@ -131,12 +131,15 @@ export default function ChildHomePage() {
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
         <div className="shrink-0 flex items-center justify-center px-4 pt-4 pb-2">
-          <Link
-            href="/child/home"
-            className="font-bold text-sm cursor-pointer"
-            style={{ color: "#1a6b5a" }}
-          >
-            내친구 케이
+          <Link href="/child/home" className="cursor-pointer">
+            <Image
+              src="/Images/logo/Logo.png"
+              alt="내친구 케이"
+              width={84}
+              height={24}
+              className="object-contain"
+              priority
+            />
           </Link>
         </div>
 

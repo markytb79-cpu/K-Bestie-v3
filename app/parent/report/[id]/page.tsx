@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
 
@@ -223,9 +224,14 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           <Link href="/parent/report" className="text-lg cursor-pointer" aria-label="뒤로가기">
             ←
           </Link>
-          <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>
-            리포트 상세
-          </span>
+          <Image
+            src="/Images/logo/Logo.png"
+            alt="내친구 케이"
+            width={84}
+            height={24}
+            className="object-contain"
+            priority
+          />
           <span className="w-5" />
         </div>
 

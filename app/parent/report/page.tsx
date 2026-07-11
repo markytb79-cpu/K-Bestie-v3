@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
 
@@ -83,9 +84,14 @@ export default function ParentReportPage() {
           <Link href="/parent/home" className="text-lg cursor-pointer" aria-label="뒤로가기">
             ←
           </Link>
-          <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>
-            {childName ? `${childName}의 대화 리포트` : "대화 리포트"}
-          </span>
+          <Image
+            src="/Images/logo/Logo.png"
+            alt="내친구 케이"
+            width={84}
+            height={24}
+            className="object-contain animate-fade-in"
+            priority
+          />
           <span className="text-xs font-semibold px-2 py-0.5 bg-gray-100 rounded-full text-gray-500">
             {reports.length}개
           </span>

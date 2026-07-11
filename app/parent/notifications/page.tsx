@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
 import { useStore } from "@/hooks/useStore";
@@ -45,9 +46,14 @@ export default function ParentNotificationsPage() {
           <Link href="/parent/home" className="text-lg cursor-pointer" aria-label="뒤로가기">
             ←
           </Link>
-          <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>
-            알림
-          </span>
+          <Image
+            src="/Images/logo/Logo.png"
+            alt="내친구 케이"
+            width={84}
+            height={24}
+            className="object-contain"
+            priority
+          />
           <div className="flex items-center gap-1.5 select-none">
             {unread > 0 ? (
               <button

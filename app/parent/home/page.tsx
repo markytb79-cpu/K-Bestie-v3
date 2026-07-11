@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useStore } from "@/hooks/useStore";
 import { createClient } from "@/lib/supabase/client";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
@@ -245,7 +246,14 @@ export default function ParentHomePage() {
         <DemoFrame>
           <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
             <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
-              <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>내친구 케이</span>
+              <Image
+                src="/Images/logo/Logo.png"
+                alt="내친구 케이"
+                width={84}
+                height={24}
+                className="object-contain"
+                priority
+              />
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto px-5 py-14 flex flex-col items-center text-center gap-6">
               <p className="text-5xl">⏳</p>
@@ -276,7 +284,14 @@ export default function ParentHomePage() {
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
           <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
-            <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>내친구 케이</span>
+            <Image
+              src="/Images/logo/Logo.png"
+              alt="내친구 케이"
+              width={84}
+              height={24}
+              className="object-contain"
+              priority
+            />
           </div>
 
           {viewState === "select" && (
@@ -449,7 +464,14 @@ export default function ParentHomePage() {
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
           <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
-            <span className="font-bold text-sm" style={{ color: "#1a6b5a" }}>내친구 케이</span>
+            <Image
+              src="/Images/logo/Logo.png"
+              alt="내친구 케이"
+              width={84}
+              height={24}
+              className="object-contain"
+              priority
+            />
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto px-5 py-14 flex flex-col items-center text-center gap-6">
             <p className="text-5xl">🧒</p>
@@ -524,12 +546,15 @@ export default function ParentHomePage() {
           style={{ background: "#fafaf8" }}
         >
           <span className="w-5" />
-          <Link
-            href="/parent/home"
-            className="font-bold text-sm cursor-pointer"
-            style={{ color: "#1a6b5a" }}
-          >
-            내친구 케이
+          <Link href="/parent/home" className="cursor-pointer">
+            <Image
+              src="/Images/logo/Logo.png"
+              alt="내친구 케이"
+              width={84}
+              height={24}
+              className="object-contain"
+              priority
+            />
           </Link>
           <Link href="/parent/notifications" className="text-lg cursor-pointer" aria-label="알림">
             🔔

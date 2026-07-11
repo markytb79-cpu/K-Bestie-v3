@@ -258,12 +258,15 @@ function MissionInner() {
       {/* 상단 고정 영역: 헤더 + 진행률 게이지 + 마스코트 (스크롤되지 않음) */}
       <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
         <div className="flex items-center justify-center px-4 pt-4 pb-2">
-          <Link
-            href="/child/home"
-            className="font-bold text-sm cursor-pointer"
-            style={{ color: "#1a6b5a" }}
-          >
-            내친구 케이
+          <Link href="/child/home" className="cursor-pointer">
+            <Image
+              src="/Images/logo/Logo.png"
+              alt="내친구 케이"
+              width={84}
+              height={24}
+              className="object-contain"
+              priority
+            />
           </Link>
         </div>
 
