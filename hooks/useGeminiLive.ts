@@ -76,6 +76,11 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   const recognitionRef = useRef<any>(null);
   const speechHistoryRef = useRef<string>("");
   const hasLiveInputTxRef = useRef<boolean>(false);
+  // 이번 아이 발화 턴이 이미 flush(말풍선 확정)됐는지 — 브라우저 STT 폴백(rec.onresult의
+  // finalTranscript)과 Gemini 자체 inputTranscription 기반 flush(outTx 도착 시)가 같은 턴에
+  // 대해 경쟁적으로 둘 다 flushChildTurn()을 호출해 말풍선이 중복 생성되던 문제 방지용.
+  // sc.turnComplete 시 다음 아이 발화를 위해 false로 리셋.
+  const childTurnFlushedRef = useRef(false);
 
   // ── 스케줄 기반 오디오 재생 (갭 없는 gapless 재생) ─────────
   // 이전 큐/playNext 방식은 onended→start 사이 JS 이벤트 루프 갭으로 파직거림 발생.
@@ -184,6 +189,11 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // child 턴 flush — gemini 모드는 즉시 동기 처리(기존 동작 유지),
   // gcp 모드는 누적 오디오를 /api/mission/stt로 전사(fire-and-forget)해 최종 텍스트로 콜백.
   function flushChildTurn(fallbackText: string) {
+    // 이번 아이 발화 턴은 이미 flush됨 — 브라우저 STT 폴백/Gemini 전사 중 먼저 도착한
+    // 한쪽만 반영하고 나머지는 무시(말풍선 중복 생성 방지)
+    if (childTurnFlushedRef.current) return;
+    childTurnFlushedRef.current = true;
+
     if (sttModeRef.current !== "gcp") {
       appendTurn({ role: "child", text: fallbackText });
       onTurnCompleteRef.current?.({ role: "child", text: fallbackText });
@@ -316,6 +326,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       setTranscript([]);
     }
     diagCountRef.current = 0;
+    childTurnFlushedRef.current = false;
 
     try {
       const res = await fetch("/api/voice/token", { method: "POST" });
@@ -442,6 +453,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
               hasLiveInputTxRef.current = false;
               speechHistoryRef.current = "";
               setInterimChildText("");
+              childTurnFlushedRef.current = false; // 다음 아이 발화 턴을 위해 리셋
             }
           },
           onerror: (e: ErrorEvent) => {
