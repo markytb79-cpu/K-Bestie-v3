@@ -176,7 +176,7 @@ export default function ParentGuidePage() {
                 onChange={(e) => setQInput(e.target.value)}
                 placeholder="케이가 아이에게 전달할 질문..."
                 maxLength={100}
-                className="flex-1 px-3.5 py-3 rounded-xl text-sm outline-none border-2 border-transparent transition-colors"
+                className="flex-1 min-w-0 px-3.5 py-3 rounded-xl text-sm outline-none border-2 border-transparent transition-colors"
                 style={{ background: "#F9FAFB" }}
                 onFocus={(e) => (e.target.style.borderColor = "#1a6b5a")}
                 onBlur={(e) => (e.target.style.borderColor = "transparent")}
