@@ -95,6 +95,10 @@ function MissionInner() {
   const [voiceMode, setVoiceMode] = useState<VoiceMode | null>(null);
   // 🔧 임시 테스트용 — Tier3(Live) 전용 목소리 선택. TODO: Live 목소리 확정 후 제거.
   const [testVoiceName, setTestVoiceName] = useState<string>("Aoede");
+  // 🔧 임시 테스트용 — Live는 목소리를 먼저 고르고 "시작" 버튼을 눌러야 세션이 연결되게 함
+  // (불필요한 Live API 연결/비용 방지). stt_tts(Tier1/2)는 이 게이트와 무관하게 기존처럼 자동 시작.
+  // TODO: Live 목소리 확정 후 이 게이트와 관련 UI 제거(자동 시작으로 복원).
+  const [liveReadyToStart, setLiveReadyToStart] = useState(false);
 
   const sessionIdRef = useRef<string | null>(null);
   const questionsRef = useRef<MissionQuestion[]>([]);
@@ -107,6 +111,9 @@ function MissionInner() {
   // (handleTurnComplete는 훅 생성 전에 정의되어야 하므로 직접 참조 불가)
   const askQuestionRef = useRef<((idx: number, customText?: string) => void) | undefined>(undefined);
   const getTranscriptRef = useRef<(() => Turn[]) | undefined>(undefined);
+  // 🔧 임시 테스트용 — handleTurnComplete(useCallback, deps 고정)에서 최신 isLiveMode를
+  // 참조하기 위한 ref. TODO: Live 목소리 확정 후 이 ref와 관련 예외 분기 제거.
+  const isLiveModeRef = useRef(false);
 
   const saveMessage = useCallback((role: "child" | "k", content: string) => {
     const sid = sessionIdRef.current;
@@ -151,12 +158,18 @@ function MissionInner() {
         if (!res.ok) return;
         const data = await res.json();
         questionStatesRef.current = data.questionStates ?? questionStatesRef.current;
-        setGauge(data.validAnswerCount ?? 0);
 
-        if (data.completed) {
-          completedRef.current = true;
-          setCompleted(true);
-          return;
+        // 🔧 임시 테스트용 — Live 목소리 테스트 중엔 진행도(%) 증가와 미션 완료 처리를 멈춰서,
+        // 목소리를 끝까지 들어보기 전에 미션이 끝나버리지 않게 함.
+        // TODO: Live 목소리 확정 후 이 예외(if/else 전체) 제거하고 항상 정상 처리되게 되돌릴 것.
+        if (!isLiveModeRef.current) {
+          setGauge(data.validAnswerCount ?? 0);
+
+          if (data.completed) {
+            completedRef.current = true;
+            setCompleted(true);
+            return;
+          }
         }
 
         const next = pickNextIndex(questionStatesRef.current);
@@ -202,6 +215,7 @@ function MissionInner() {
   const live = useGeminiLive({ onTurnComplete: handleTurnComplete, voiceName: testVoiceName });
 
   const isLiveMode = voiceMode === "live";
+  isLiveModeRef.current = isLiveMode;
 
   const voice = isLiveMode
     ? {
@@ -334,11 +348,13 @@ function MissionInner() {
   }, [searchParams, router]);
 
   useEffect(() => {
-    if (phase === "ready" && voiceMode && voice.status === "idle") {
-      voice.startSession();
-    }
+    if (phase !== "ready" || !voiceMode || voice.status !== "idle") return;
+    // 🔧 임시 테스트용 — Live는 목소리를 고르고 "시작" 버튼을 누르기 전엔 연결하지 않는다
+    // (불필요한 Live API 연결/비용 방지). TODO: Live 목소리 확정 후 이 조건 제거.
+    if (voiceMode === "live" && !liveReadyToStart) return;
+    voice.startSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, voiceMode, voice.status]);
+  }, [phase, voiceMode, voice.status, liveReadyToStart]);
 
   // 세션 시작 후 최초 1회만 첫 질문을 묻는다. 이후 질문은 handleTurnComplete에서
   // 답변 처리 완료 시점에 askQuestionRef를 통해 직접 트리거된다(ref 변화는 effect를
@@ -400,6 +416,36 @@ function MissionInner() {
           style={{ background: "#1a6b5a" }}
         >
           홈으로 돌아가기
+        </button>
+      </div>
+    );
+  }
+
+  // 🔧 임시 테스트용 — Live는 목소리를 먼저 고르고 "시작"을 눌러야 세션이 연결됨.
+  // TODO: Live 목소리 확정 후 이 화면과 게이트 전체 제거(자동 시작으로 복원).
+  if (isLiveMode && !liveReadyToStart) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "#fafaf8" }}>
+        <p className="text-5xl">🔊</p>
+        <p className="text-base font-bold text-gray-800">케이 목소리를 먼저 골라보세요</p>
+        <p className="text-xs text-gray-500">🔧 Live 목소리 테스트(임시)</p>
+        <select
+          value={testVoiceName}
+          onChange={(e) => setTestVoiceName(e.target.value)}
+          className="text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white cursor-pointer"
+        >
+          {LIVE_TEST_VOICES.map((v) => (
+            <option key={v.name} value={v.name}>
+              {v.name}{v.label ? ` (${v.label})` : ""}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => setLiveReadyToStart(true)}
+          className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
+          style={{ background: "#1a6b5a" }}
+        >
+          이 목소리로 시작하기
         </button>
       </div>
     );

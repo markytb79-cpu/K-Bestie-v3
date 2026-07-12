@@ -617,8 +617,11 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
    *  role:"k"로 호출되어(child 판정/미션 답변 로직을 타지 않음) 대화 로그에는 남되 오답 처리되지 않는다. */
   const speakAsK = useCallback((text: string): boolean => {
     if (!sessionRef.current || statusRef.current !== "live") return false;
-    appendTurn({ role: "k", text });
-    onTurnCompleteRef.current?.({ role: "k", text });
+    // 여기서 말풍선을 낙관적으로 먼저 찍지 않는다 — 모델이 실제로 발화하며 오는
+    // outputTranscription(outTx)이 onmessage에서 자동으로 말풍선을 채운다.
+    // 예전엔 여기서도 appendTurn+onTurnComplete를 즉시 호출해서, 뒤이어 도착하는 outTx가
+    // 같은 "k" 턴으로 병합되며 같은 문장이 말풍선 안에 두 번 붙는 문제가 있었음
+    // (예: "...뭐니?안녕~ 난 케이야...").
     sessionRef.current.sendClientContent({
       turns: [{ role: "user", parts: [{ text: `다음 문장을 자연스럽게 소리내어 그대로 말해줘: "${text}"` }] }],
       turnComplete: true,
