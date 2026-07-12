@@ -66,6 +66,11 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   const outputCtxRef  = useRef<AudioContext | null>(null);
   const audioMutedRef = useRef(false);
   const micEnabledRef = useRef(true);
+  // K 발화 재생 중 여부 — true인 동안 마이크 PCM 전송과 브라우저 STT 폴백을 모두 멈춰서
+  // 스피커로 나온 K 목소리가 마이크로 다시 들어와 아이 발화로 오인되는 에코 루프를 막는다
+  // (useVoiceChat.ts의 speakingRef와 동일한 목적, echoCancellation 브라우저 제약만으로는
+  //  WebAudio API로 재생하는 오디오를 AEC 기준 신호로 못 잡는 경우가 있어 반드시 필요).
+  const kSpeakingRef = useRef(false);
 
   // 로컬 STT fallback 관리 변수
   const recognitionRef = useRef<any>(null);
@@ -115,10 +120,12 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       source.start(startAt);
       nextScheduleTimeRef.current = startAt + audioBuffer.duration;
       scheduledSourcesRef.current.push(source);
+      kSpeakingRef.current = true; // 재생 시작 — 마이크 무음 유지
       source.onended = () => {
         const arr = scheduledSourcesRef.current;
         const i = arr.indexOf(source);
         if (i !== -1) arr.splice(i, 1);
+        if (arr.length === 0) kSpeakingRef.current = false; // 마지막 버퍼 재생 종료 — 마이크 재개
       };
     } catch { /* 손상된 프레임 무시 */ }
   }
@@ -127,6 +134,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     scheduledSourcesRef.current.forEach(src => { try { src.stop(); } catch { /* already stopped */ } });
     scheduledSourcesRef.current = [];
     nextScheduleTimeRef.current = 0;
+    kSpeakingRef.current = false;
   }
 
   function appendTurn(turn: Turn) {
@@ -224,6 +232,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     rec.lang = "ko-KR";
 
     rec.onresult = (event: any) => {
+      // K가 발화 재생 중이면 스피커 소리가 마이크로 들어온 에코일 뿐이므로 완전히 무시(에코 루프 방지)
+      if (kSpeakingRef.current) return;
       // Gemini 자체 inputTranscription이 이 턴에 대해 이미 도착했다면 폴백은 관여하지 않음(중복 방지)
       if (hasLiveInputTxRef.current) return;
 
@@ -450,7 +460,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
       let chunkCount = 0;
       processor.onaudioprocess = (ev) => {
-        if (sessionRef.current && statusRef.current === "live" && micEnabledRef.current) {
+        // kSpeakingRef: K 발화 재생 중엔 마이크 전송 자체를 끊어 에코가 Gemini/브라우저 STT
+        // 어느 쪽으로도 아이 발화로 들어가지 않게 한다(half-duplex, echoCancellation만으론 불충분).
+        if (sessionRef.current && statusRef.current === "live" && micEnabledRef.current && !kSpeakingRef.current) {
           const float32 = ev.inputBuffer.getChannelData(0);
           const pcm = encodePCM16(float32);
           sessionRef.current.sendRealtimeInput({ audio: { data: pcm, mimeType: "audio/pcm;rate=16000" } });
