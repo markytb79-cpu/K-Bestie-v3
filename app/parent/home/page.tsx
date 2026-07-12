@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useStore } from "@/hooks/useStore";
 import { createClient } from "@/lib/supabase/client";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
+import { ParentHeader } from "@/components/ParentHeader";
 import { useDemoView } from "@/app/demo/components/DemoViewContext";
 import { SkeletonBox } from "@/components/Skeleton";
 
@@ -49,8 +49,6 @@ export default function ParentHomePage() {
   // 먼저 그려지는 것을 막기 위한 게이트. syncChildrenFromDB()가 끝나야 false가 된다.
   const [syncingFamily, setSyncingFamily] = useState(true);
   const [parentName, setParentName] = useState<string>("보호자");
-  const [activeIdx, setActiveIdx] = useState(0);
-  const [showChildPicker, setShowChildPicker] = useState(false);
   const [latestReport, setLatestReport] = useState<Report | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
 
@@ -64,7 +62,7 @@ export default function ParentHomePage() {
   const [joinRequestStatus, setJoinRequestStatus] = useState<"loading" | "none" | "pending">("loading");
   const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
 
-  const activeChild = children[activeIdx] ?? null;
+  const activeChild = children.find((c) => c.id === store.activeChildId) ?? children[0] ?? null;
 
   const checkJoinRequest = async () => {
     if (store.activeFamilyId) {
@@ -242,10 +240,7 @@ export default function ParentHomePage() {
     return (
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
-          <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
-            <SkeletonBox className="w-20 h-6" />
-            <SkeletonBox className="w-16 h-5" />
-          </div>
+          <ParentHeader />
           <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
             <SkeletonBox className="h-[72px] mb-6" />
             <SkeletonBox className="w-28 h-5 mb-3" />
@@ -277,16 +272,7 @@ export default function ParentHomePage() {
       return (
         <DemoFrame>
           <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
-            <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
-              <Image
-                src="/Images/logo/Logo.png"
-                alt="내친구 케이"
-                width={84}
-                height={24}
-                className="object-contain"
-                priority
-              />
-            </div>
+            <ParentHeader />
             <div className="flex-1 min-h-0 overflow-y-auto px-5 py-14 flex flex-col items-center text-center gap-6">
               <p className="text-5xl">⏳</p>
               <div>
@@ -315,16 +301,7 @@ export default function ParentHomePage() {
     return (
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
-          <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
-            <Image
-              src="/Images/logo/Logo.png"
-              alt="내친구 케이"
-              width={84}
-              height={24}
-              className="object-contain"
-              priority
-            />
-          </div>
+          <ParentHeader />
 
           {viewState === "select" && (
             <div className="flex-1 min-h-0 overflow-y-auto px-5 py-10 flex flex-col items-center text-center gap-6">
@@ -495,16 +472,7 @@ export default function ParentHomePage() {
     return (
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
-          <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
-            <Image
-              src="/Images/logo/Logo.png"
-              alt="내친구 케이"
-              width={84}
-              height={24}
-              className="object-contain"
-              priority
-            />
-          </div>
+          <ParentHeader />
           <div className="flex-1 min-h-0 overflow-y-auto px-5 py-14 flex flex-col items-center text-center gap-6">
             <p className="text-5xl">🧒</p>
             <div>
@@ -543,9 +511,6 @@ export default function ParentHomePage() {
     lastChatDate = `${y}.${m}.${day}`;
   }
 
-  const ORDINAL_LABELS = ["첫째", "둘째", "셋째", "넷째", "다섯째"];
-  const ordinalLabel = (idx: number) => ORDINAL_LABELS[idx] ?? `${idx + 1}번째`;
-
   // 대시보드 카드 구성
   const dbCards = latestReport?.dashboard_cards ?? {};
   const currentEmotionLevel = latestReport?.emotion_level ?? null;
@@ -568,37 +533,7 @@ export default function ParentHomePage() {
   return (
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
-        {/* 헤더 */}
-        <div
-          className="shrink-0 flex items-center justify-between px-4 py-4"
-          style={{ background: "#fafaf8" }}
-        >
-          <Link href="/parent/home" className="cursor-pointer">
-            <Image
-              src="/Images/logo/Logo.png"
-              alt="내친구 케이"
-              width={84}
-              height={24}
-              className="object-contain"
-              priority
-            />
-          </Link>
-          <div className="flex items-center gap-3">
-            {activeChild && (
-              <button
-                onClick={() => { if (children.length > 1) setShowChildPicker(true); }}
-                className={`flex items-center gap-1 text-xs font-bold ${children.length > 1 ? "cursor-pointer" : ""}`}
-                style={{ color: "#1e1e2d" }}
-              >
-                {activeChild.name}
-                {children.length > 1 && <span className="text-[9px]" style={{ color: "#6b7280" }}>▾</span>}
-              </button>
-            )}
-            <Link href="/parent/notifications" className="text-lg cursor-pointer" aria-label="알림">
-              🔔
-            </Link>
-          </div>
-        </div>
+        <ParentHeader />
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
           {/* 프로필 카드 — 아이 전환은 상단 이름 버튼에서 처리 */}
@@ -657,41 +592,6 @@ export default function ParentHomePage() {
         </div>
 
         <RealParentNav active="홈" />
-
-        {/* 아이 선택 목록 — 첫째/둘째/셋째 순서(children은 API에서 created_at 오름차순으로 옴) */}
-        {showChildPicker && (
-          <div
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
-            onClick={() => setShowChildPicker(false)}
-          >
-            <div
-              className="w-full max-w-xs bg-white rounded-2xl p-4 shadow-lg flex flex-col gap-2"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <p className="text-sm font-bold text-center py-1.5" style={{ color: "#1e1e2d" }}>
-                아이 선택
-              </p>
-              {children.map((c, idx) => {
-                const isSelected = idx === activeIdx;
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => {
-                      setActiveIdx(idx);
-                      setShowChildPicker(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl border text-sm font-bold cursor-pointer ${
-                      isSelected ? "bg-[#fdf1ec] border-[#e8845a] text-[#e8845a]" : "bg-white border-gray-200 text-gray-700"
-                    }`}
-                  >
-                    <span>🧒 {ordinalLabel(idx)} · {c.name} ({c.grade})</span>
-                    {isSelected && <span className="text-[10px] bg-[#e8845a] text-white px-2 py-0.5 rounded-full">선택됨</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
     </DemoFrame>
   );

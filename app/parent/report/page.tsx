@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
+import { ParentHeader } from "@/components/ParentHeader";
 import { SkeletonBox } from "@/components/Skeleton";
+import { useStore } from "@/hooks/useStore";
 
 interface Report {
   id: string;
@@ -43,39 +44,31 @@ function formatRelative(iso: string) {
 }
 
 export default function ParentReportPage() {
+  const store = useStore();
+  const activeChildId = store.activeChildId ?? store.children[0]?.id ?? null;
   const [reports, setReports] = useState<Report[]>([]);
-  const [childName, setChildName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const id = localStorage.getItem("k_child_id");
-    if (!id) {
+    if (!activeChildId) {
       setLoading(false);
       return;
     }
-
-    Promise.all([
-      fetch(`/api/parent/reports?childId=${id}`).then((r) => (r.ok ? r.json() : null)),
-      fetch(`/api/child/${encodeURIComponent(id)}`).then((r) => (r.ok ? r.json() : null)),
-    ])
-      .then(([reportData, childData]) => {
+    setLoading(true);
+    fetch(`/api/parent/reports?childId=${activeChildId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((reportData) => {
         setReports(reportData?.reports ?? []);
-        if (childData?.name) setChildName(childData.name);
-        else if (reportData?.childName) setChildName(reportData.childName);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [activeChildId]);
 
   if (loading) {
     return (
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
-          <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
-            <span className="w-5" />
-            <SkeletonBox className="w-20 h-6" />
-            <span className="w-10 h-5" />
-          </div>
+          <ParentHeader />
           <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
               <SkeletonBox key={i} className="h-24" />
@@ -89,23 +82,14 @@ export default function ParentReportPage() {
   return (
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
-        {/* 헤더 */}
-        <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
-          <span className="w-5" />
-          <Image
-            src="/Images/logo/Logo.png"
-            alt="내친구 케이"
-            width={84}
-            height={24}
-            className="object-contain animate-fade-in"
-            priority
-          />
-          <span className="text-xs font-semibold px-2 py-0.5 bg-gray-100 rounded-full text-gray-500">
-            {reports.length}개
-          </span>
-        </div>
+        <ParentHeader />
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+          <div className="flex justify-end">
+            <span className="text-xs font-semibold px-2 py-0.5 bg-gray-100 rounded-full text-gray-500">
+              {reports.length}개
+            </span>
+          </div>
           {reports.length === 0 ? (
             <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
               <p className="text-4xl mb-4">📭</p>

@@ -2,9 +2,9 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
+import { ParentHeader } from "@/components/ParentHeader";
 import { useDemoView } from "@/app/demo/components/DemoViewContext";
 import { ReportDetailSkeleton } from "./ReportDetailSkeleton";
 
@@ -217,24 +217,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
   return (
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
-        {/* 헤더 */}
-        <div
-          className="shrink-0 flex items-center justify-between px-4 py-4"
-          style={{ background: "#fafaf8" }}
-        >
-          <Link href="/parent/report" className="text-lg cursor-pointer" aria-label="뒤로가기">
-            ←
-          </Link>
-          <Image
-            src="/Images/logo/Logo.png"
-            alt="내친구 케이"
-            width={84}
-            height={24}
-            className="object-contain"
-            priority
-          />
-          <span className="w-5" />
-        </div>
+        <ParentHeader />
 
         <div
           className={`flex-1 min-h-0 overflow-y-auto ${view === "tablet" ? "flex gap-6 px-4 pt-4" : ""}`}

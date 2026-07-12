@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/hooks/useStore";
 import { createClient } from "@/lib/supabase/client";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
+import { ParentHeader } from "@/components/ParentHeader";
 import { SkeletonBox } from "@/components/Skeleton";
 import {
   setNotifSetting,
@@ -358,9 +357,7 @@ export default function ParentSettingsPage() {
     return (
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
-          <div className="shrink-0 flex items-center justify-center px-4 py-4" style={{ background: "#fafaf8" }}>
-            <SkeletonBox className="w-20 h-6" />
-          </div>
+          <ParentHeader />
           <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
             {Array.from({ length: 3 }).map((_, i) => (
               <SkeletonBox key={i} className="h-16" />
@@ -380,22 +377,7 @@ export default function ParentSettingsPage() {
   return (
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
-        {/* 헤더 */}
-        <div
-          className="shrink-0 flex items-center justify-center px-4 py-4"
-          style={{ background: "#fafaf8" }}
-        >
-          <Link href="/parent/home" className="cursor-pointer">
-            <Image
-              src="/Images/logo/Logo.png"
-              alt="내친구 케이"
-              width={84}
-              height={24}
-              className="object-contain"
-              priority
-            />
-          </Link>
-        </div>
+        <ParentHeader />
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
           {/* 1. 아이 추가 메뉴 카드 */}
