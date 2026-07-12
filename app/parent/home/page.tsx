@@ -243,9 +243,8 @@ export default function ParentHomePage() {
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
           <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
-            <span className="w-5" />
             <SkeletonBox className="w-20 h-6" />
-            <span className="w-5" />
+            <SkeletonBox className="w-16 h-5" />
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
             <SkeletonBox className="h-[72px] mb-6" />
@@ -574,7 +573,6 @@ export default function ParentHomePage() {
           className="shrink-0 flex items-center justify-between px-4 py-4"
           style={{ background: "#fafaf8" }}
         >
-          <span className="w-5" />
           <Link href="/parent/home" className="cursor-pointer">
             <Image
               src="/Images/logo/Logo.png"
@@ -585,19 +583,26 @@ export default function ParentHomePage() {
               priority
             />
           </Link>
-          <Link href="/parent/notifications" className="text-lg cursor-pointer" aria-label="알림">
-            🔔
-          </Link>
+          <div className="flex items-center gap-3">
+            {activeChild && (
+              <button
+                onClick={() => { if (children.length > 1) setShowChildPicker(true); }}
+                className={`flex items-center gap-1 text-xs font-bold ${children.length > 1 ? "cursor-pointer" : ""}`}
+                style={{ color: "#1e1e2d" }}
+              >
+                {activeChild.name}
+                {children.length > 1 && <span className="text-[9px]" style={{ color: "#6b7280" }}>▾</span>}
+              </button>
+            )}
+            <Link href="/parent/notifications" className="text-lg cursor-pointer" aria-label="알림">
+              🔔
+            </Link>
+          </div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
-          {/* 프로필 카드 (여러 명인 경우 "전환" 클릭 시 아이 선택 목록 표시) */}
-          <div
-            onClick={() => { if (children.length > 1) setShowChildPicker(true); }}
-            className={`flex items-center justify-between bg-white rounded-2xl px-4 py-4 shadow-sm mb-6 ${
-              children.length > 1 ? "cursor-pointer active:scale-[0.99] hover:bg-gray-50/50" : ""
-            }`}
-          >
+          {/* 프로필 카드 — 아이 전환은 상단 이름 버튼에서 처리 */}
+          <div className="flex items-center justify-between bg-white rounded-2xl px-4 py-4 shadow-sm mb-6">
             <div className="flex items-center gap-3">
               <div
                 className="w-11 h-11 rounded-full flex items-center justify-center text-lg select-none"
@@ -605,21 +610,9 @@ export default function ParentHomePage() {
               >
                 🧒
               </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <p className="font-bold text-sm" style={{ color: "#1e1e2d" }}>
-                    {activeChild?.name}
-                  </p>
-                  {children.length > 1 && (
-                    <span className="text-[9px] bg-gray-100 text-gray-500 font-bold px-1.5 py-0.5 rounded-full select-none">
-                      전환 🔄
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs" style={{ color: "#6b7280" }}>
-                  ({formattedGrade}, {childAge}세)
-                </p>
-              </div>
+              <p className="text-xs" style={{ color: "#6b7280" }}>
+                ({formattedGrade}, {childAge}세)
+              </p>
             </div>
             <div className="text-right">
               <p className="text-[10px]" style={{ color: "#6b7280" }}>

@@ -91,9 +91,7 @@ export default function ParentReportPage() {
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
         {/* 헤더 */}
         <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
-          <Link href="/parent/home" className="text-lg cursor-pointer" aria-label="뒤로가기">
-            ←
-          </Link>
+          <span className="w-5" />
           <Image
             src="/Images/logo/Logo.png"
             alt="내친구 케이"

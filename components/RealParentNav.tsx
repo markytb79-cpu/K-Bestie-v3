@@ -15,7 +15,7 @@ export function RealParentNav({ active }: { active?: string }) {
 
   return (
     <div
-      className="shrink-0 flex items-stretch border-t"
+      className="shrink-0 sticky bottom-0 z-20 flex items-stretch border-t"
       style={{ background: "#ffffff", borderColor: "#f3f4f6" }}
     >
       {NAV_ITEMS.map((item) => {
