@@ -120,12 +120,34 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       source.start(startAt);
       nextScheduleTimeRef.current = startAt + audioBuffer.duration;
       scheduledSourcesRef.current.push(source);
-      kSpeakingRef.current = true; // 재생 시작 — 마이크 무음 유지
+
+      if (!kSpeakingRef.current) {
+        kSpeakingRef.current = true; // 재생 시작 — 마이크 무음 유지
+        // 브라우저 STT 엔진 자체를 정지시킨다 — onresult 콜백에서 결과를 걸러내는 것만으로는
+        // 부족하다(isFinal 결과가 실제 발화보다 수백ms~1초 늦게 도착해, K가 말을 끝내고
+        // kSpeakingRef가 false로 풀린 뒤에야 에코 인식 결과가 도착해 가드를 통과하는 경우가 있었음).
+        if (recognitionRef.current) {
+          try { recognitionRef.current.stop(); } catch { /* 이미 정지 상태 등 */ }
+        }
+        speechHistoryRef.current = "";
+        setInterimChildText("");
+      }
+
       source.onended = () => {
         const arr = scheduledSourcesRef.current;
         const i = arr.indexOf(source);
         if (i !== -1) arr.splice(i, 1);
-        if (arr.length === 0) kSpeakingRef.current = false; // 마지막 버퍼 재생 종료 — 마이크 재개
+        if (arr.length === 0) {
+          kSpeakingRef.current = false; // 마지막 버퍼 재생 종료 — 마이크 재개
+          // 스피커 잔향이 빠질 시간을 약간 두고 브라우저 STT 재시작
+          if (ENABLE_STT_FALLBACK && sttModeRef.current !== "gcp") {
+            setTimeout(() => {
+              if (!kSpeakingRef.current && statusRef.current === "live" && micEnabledRef.current) {
+                try { recognitionRef.current?.start(); } catch { /* 이미 실행 중인 경우 무시 */ }
+              }
+            }, 300);
+          }
+        }
       };
     } catch { /* 손상된 프레임 무시 */ }
   }
@@ -274,6 +296,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     };
 
     rec.onend = () => {
+      // K 발화 재생 중엔 재시작하지 않는다 — 재시작은 scheduleAudio()의 재생 종료 콜백이 담당
+      // (여기서 무조건 재시작하면 stop()으로 끊어놓은 의미가 없어져 에코가 계속 들어옴).
+      if (kSpeakingRef.current) return;
       if (statusRef.current === "live" && micEnabledRef.current && recognitionRef.current) {
         try { recognitionRef.current.start(); } catch {}
       }
