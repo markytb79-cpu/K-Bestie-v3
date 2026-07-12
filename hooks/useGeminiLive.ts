@@ -5,6 +5,15 @@ import { GoogleGenAI, Modality, type LiveServerMessage } from "@google/genai";
 
 const ENABLE_STT_FALLBACK = true;
 
+// K 응답 강제 길이 제한 — 네이티브 오디오 Live 모델은 maxOutputTokens 등 서버 설정으로
+// 응답 길이를 확실히 제한할 방법이 없음이 확인됨(공식 문서에 관련 파라미터 없음, SDK
+// 이슈 트래커에도 "maxOutputTokens 늘려도 효과 없음" 보고 다수). systemInstruction만으로도
+// 모델이 매번 지키진 않으므로, 클라이언트에서 재생 자체를 강제로 끊는 것이 유일하게
+// 확실한 방법. SOFT는 문장부호에서 자연스럽게 끊는 기준, HARD는 문장부호가 안 나와도
+// 무조건 끊는 최종 안전장치.
+const K_TURN_SOFT_CUT_CHARS = 50;
+const K_TURN_HARD_CUT_CHARS = 110;
+
 export type SessionStatus = "idle" | "connecting" | "live" | "ending" | "ended" | "paused" | "error";
 export interface Turn { role: "child" | "k"; text: string }
 
@@ -81,6 +90,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // 대해 경쟁적으로 둘 다 flushChildTurn()을 호출해 말풍선이 중복 생성되던 문제 방지용.
   // sc.turnComplete 시 다음 아이 발화를 위해 false로 리셋.
   const childTurnFlushedRef = useRef(false);
+  // K 턴이 강제로 끊겼는지 — true인 동안엔 서버가 계속 보내는 나머지 오디오/전사를 전부
+  // 무시하고 진짜 turnComplete만 기다렸다가 다음 턴을 위해 리셋한다.
+  const kTurnCutRef = useRef(false);
 
   // ── 스케줄 기반 오디오 재생 (갭 없는 gapless 재생) ─────────
   // 이전 큐/playNext 방식은 onended→start 사이 JS 이벤트 루프 갭으로 파직거림 발생.
@@ -327,6 +339,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     }
     diagCountRef.current = 0;
     childTurnFlushedRef.current = false;
+    kTurnCutRef.current = false;
 
     try {
       const res = await fetch("/api/voice/token", { method: "POST" });
@@ -393,10 +406,22 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
           },
           onmessage: (msg: LiveServerMessage) => {
             // ── 오디오 재생 ──────────────────────────────────────
-            if (msg.data) scheduleAudio(msg.data);
+            // 이번 턴이 강제로 끊긴 상태(kTurnCutRef)면 서버가 계속 보내는 나머지
+            // 오디오는 재생하지 않고 버린다(길게 말하는 것을 실제로 막는 부분).
+            if (msg.data && !kTurnCutRef.current) scheduleAudio(msg.data);
 
             const sc = msg.serverContent as Record<string, unknown> | undefined;
             if (!sc) return;
+
+            // ── 강제 종료된 턴 — 진짜 turnComplete만 기다렸다가 다음 턴 준비 ──
+            if (kTurnCutRef.current) {
+              if (sc.turnComplete) {
+                kTurnCutRef.current = false;
+                hasLiveInputTxRef.current = false;
+                speechHistoryRef.current = "";
+              }
+              return;
+            }
 
             // ── 진단 로그 (첫 8개 serverContent 수신 시) ───────────
             if (diagCountRef.current < 8) {
@@ -442,6 +467,23 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
               // 다음 턴을 위해 전사 감지 플래그 초기화
               hasLiveInputTxRef.current = false;
+
+              // ── K 응답 강제 길이 제한 ────────────────────────────
+              // SOFT 이상 누적됐고 방금 청크가 문장부호로 끝나면 자연스러운 지점에서 끊고,
+              // 문장부호가 안 나와도 HARD를 넘기면 무조건 끊는다(무한정 길어지는 것 방지).
+              const endsAtSentenceBoundary = /[.!?~]\s*$/.test(outTx);
+              if (
+                pendingKText.length >= K_TURN_HARD_CUT_CHARS ||
+                (pendingKText.length >= K_TURN_SOFT_CUT_CHARS && endsAtSentenceBoundary)
+              ) {
+                console.log("[K] ✂️ 응답이 길어져 강제로 턴 종료 (", pendingKText.length, "자)");
+                kTurnCutRef.current = true;
+                stopAllScheduledSources(); // 재생 중인/예약된 오디오 즉시 중단
+                onTurnCompleteRef.current?.({ role: "k", text: pendingKText });
+                pendingKText = "";
+                setInterimChildText("");
+                childTurnFlushedRef.current = false; // 다음 아이 턴 준비
+              }
             }
 
             // ── 턴 완료 ───────────────────────────────────────────
