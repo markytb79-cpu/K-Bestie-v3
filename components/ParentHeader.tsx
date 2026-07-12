@@ -46,51 +46,46 @@ export function ParentHeader() {
         </Link>
         <div className="flex items-center gap-3">
           {activeChild && (
-            <button
-              onClick={() => { if (children.length > 1) setShowPicker(true); }}
-              className={`flex items-center gap-1 text-xs font-bold ${children.length > 1 ? "cursor-pointer" : ""}`}
-              style={{ color: "#1e1e2d" }}
-            >
-              {activeChild.name}
-              {children.length > 1 && <span className="text-[9px]" style={{ color: "#6b7280" }}>▾</span>}
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => { if (children.length > 1) setShowPicker((v) => !v); }}
+                className={`flex items-center gap-1 text-xs font-bold ${children.length > 1 ? "cursor-pointer" : ""}`}
+                style={{ color: "#1e1e2d" }}
+              >
+                {activeChild.name}
+                {children.length > 1 && <span className="text-[9px]" style={{ color: "#6b7280" }}>▾</span>}
+              </button>
+
+              {showPicker && (
+                <>
+                  {/* 바깥 클릭 시 닫기 — 배경 딤 처리는 하지 않음(드롭다운이므로) */}
+                  <div className="fixed inset-0 z-40" onClick={() => setShowPicker(false)} />
+                  <div className="absolute right-0 top-full mt-2 z-50 w-52 bg-white rounded-xl shadow-lg border border-gray-100 p-1.5 flex flex-col gap-1">
+                    {children.map((c, idx) => {
+                      const isSelected = c.id === activeChild?.id;
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => handleSelect(c.id)}
+                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-bold cursor-pointer ${
+                            isSelected ? "bg-[#fdf1ec] text-[#e8845a]" : "text-gray-700 hover:bg-gray-50"
+                          }`}
+                        >
+                          <span>🧒 {ordinalLabel(idx)} · {c.name}</span>
+                          {isSelected && <span className="text-[9px] bg-[#e8845a] text-white px-1.5 py-0.5 rounded-full shrink-0">선택됨</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
           )}
           <Link href="/parent/notifications" className="text-lg cursor-pointer" aria-label="알림">
             🔔
           </Link>
         </div>
       </div>
-
-      {showPicker && (
-        <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
-          onClick={() => setShowPicker(false)}
-        >
-          <div
-            className="w-full max-w-xs bg-white rounded-2xl p-4 shadow-lg flex flex-col gap-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p className="text-sm font-bold text-center py-1.5" style={{ color: "#1e1e2d" }}>
-              아이 선택
-            </p>
-            {children.map((c, idx) => {
-              const isSelected = c.id === activeChild?.id;
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => handleSelect(c.id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl border text-sm font-bold cursor-pointer ${
-                    isSelected ? "bg-[#fdf1ec] border-[#e8845a] text-[#e8845a]" : "bg-white border-gray-200 text-gray-700"
-                  }`}
-                >
-                  <span>🧒 {ordinalLabel(idx)} · {c.name} ({c.grade})</span>
-                  {isSelected && <span className="text-[10px] bg-[#e8845a] text-white px-2 py-0.5 rounded-full">선택됨</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </>
   );
 }
