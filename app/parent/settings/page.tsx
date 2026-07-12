@@ -8,6 +8,7 @@ import { useStore } from "@/hooks/useStore";
 import { createClient } from "@/lib/supabase/client";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
+import { SkeletonBox } from "@/components/Skeleton";
 import {
   setNotifSetting,
   clearStore,
@@ -87,7 +88,7 @@ export default function ParentSettingsPage() {
   const [nicknameSuccess, setNicknameSuccess] = useState(false);
 
   // 아코디언 토글 상태 (기본은 닫힘)
-  const [activeMenu, setActiveMenu] = useState<"add_child" | "select_child" | "edit_child" | "family_members" | null>(null);
+  const [activeMenu, setActiveMenu] = useState<"add_child" | "edit_child" | "family_members" | null>(null);
 
   // 로그인 이메일 및 구성원 정보 로드
   useEffect(() => {
@@ -355,14 +356,22 @@ export default function ParentSettingsPage() {
   if (!mounted) {
     return (
       <DemoFrame>
-        <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
-          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
+        <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
+          <div className="shrink-0 flex items-center justify-center px-4 py-4" style={{ background: "#fafaf8" }}>
+            <SkeletonBox className="w-20 h-6" />
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <SkeletonBox key={i} className="h-16" />
+            ))}
+            <SkeletonBox className="h-12 mt-3" />
+          </div>
         </div>
       </DemoFrame>
     );
   }
 
-  const menuToggle = (menu: "add_child" | "select_child" | "edit_child" | "family_members") => {
+  const menuToggle = (menu: "add_child" | "edit_child" | "family_members") => {
     setActiveMenu((prev) => (prev === menu ? null : menu));
     setAddError(null);
   };
@@ -495,53 +504,7 @@ export default function ParentSettingsPage() {
             )}
           </div>
 
-          {/* 2. 아이 변경 메뉴 카드 */}
-          <div
-            onClick={() => menuToggle("select_child")}
-            className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0" style={{ background: "#f3f4f6" }}>
-                🔄
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>아이 변경</p>
-                <p className="text-[11px]" style={{ color: "#6b7280" }}>다른 아이 프로필로 전환해요</p>
-              </div>
-              <span className="text-sm" style={{ color: "#6b7280", transform: activeMenu === "select_child" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
-            </div>
-
-            {activeMenu === "select_child" && (
-              <div className="pt-3 border-t border-gray-100 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
-                {store.children.length === 0 ? (
-                  <p className="text-xs text-gray-400 text-center py-3">가입된 자녀가 없습니다.</p>
-                ) : (
-                  store.children.map((c) => {
-                    const isSelected = localStorage.getItem("k_child_id") === c.id;
-                    return (
-                      <button
-                        key={c.id}
-                        onClick={() => {
-                          localStorage.setItem("k_child_id", c.id);
-                          alert(`${c.name} 프로필로 선택되었습니다!`);
-                          setActiveMenu(null);
-                          router.refresh();
-                        }}
-                        className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-xs font-bold ${
-                          isSelected ? "bg-[#fdf1ec] border-[#e8845a] text-[#e8845a]" : "bg-white border-gray-200 text-gray-700"
-                        }`}
-                      >
-                        <span>🧒 {c.name} ({c.grade})</span>
-                        {isSelected && <span className="text-[10px] bg-[#e8845a] text-white px-2 py-0.5 rounded-full">선택됨</span>}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 3. 아이 프로필 정보 등록 메뉴 카드 (자녀 프로필 수정 전용) */}
+          {/* 2. 아이 프로필 정보 등록 메뉴 카드 (자녀 프로필 수정 전용) */}
           <div
             onClick={() => menuToggle("edit_child")}
             className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 cursor-pointer"
@@ -698,7 +661,7 @@ export default function ParentSettingsPage() {
             )}
           </div>
 
-          {/* 4. 가족 구성원 관리 메뉴 카드 (보호자 이름/알림/가족 구성원 목록) */}
+          {/* 3. 가족 구성원 관리 메뉴 카드 (보호자 이름/알림/가족 구성원 목록) */}
           <div
             onClick={() => menuToggle("family_members")}
             className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 cursor-pointer"

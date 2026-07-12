@@ -8,6 +8,7 @@ import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
 import { useVoiceChat, type Turn } from "@/hooks/useVoiceChat";
 import { useGeminiLive } from "@/hooks/useGeminiLive";
+import { SkeletonBox } from "@/components/Skeleton";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -374,8 +375,25 @@ function MissionInner() {
 
   if (phase === "loading") {
     return (
-      <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
-        <p className="text-sm font-bold text-gray-700 animate-pulse">미션을 준비하고 있어요…</p>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
+        <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
+          <div className="flex items-center justify-center px-4 pt-4 pb-2">
+            <SkeletonBox className="w-20 h-6" />
+          </div>
+          <div className="text-center pt-2 pb-4 flex flex-col items-center gap-2">
+            <SkeletonBox className="w-40 h-5" />
+            <div className="px-6 mt-1 w-full">
+              <SkeletonBox className="h-2.5 rounded-full" />
+            </div>
+          </div>
+          <div className="flex justify-center mb-4">
+            <SkeletonBox className="w-24 h-24 rounded-full" />
+          </div>
+        </div>
+        <div className="flex-1 min-h-0 px-4 flex flex-col gap-3">
+          <SkeletonBox className="h-14 self-start w-2/3" />
+        </div>
+        <div className="h-24 shrink-0 border-t border-gray-50" />
       </div>
     );
   }

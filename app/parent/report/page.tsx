@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
+import { SkeletonBox } from "@/components/Skeleton";
 
 interface Report {
   id: string;
@@ -69,8 +70,17 @@ export default function ParentReportPage() {
   if (loading) {
     return (
       <DemoFrame>
-        <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
-          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
+        <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
+          <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
+            <span className="w-5" />
+            <SkeletonBox className="w-20 h-6" />
+            <span className="w-10 h-5" />
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonBox key={i} className="h-24" />
+            ))}
+          </div>
         </div>
       </DemoFrame>
     );

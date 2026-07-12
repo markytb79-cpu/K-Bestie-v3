@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
 import { useDemoView } from "@/app/demo/components/DemoViewContext";
+import { SkeletonBox } from "@/components/Skeleton";
 
 type EmotionLevel = "safe" | "warning" | "danger";
 
@@ -49,6 +50,7 @@ export default function ParentHomePage() {
   const [syncingFamily, setSyncingFamily] = useState(true);
   const [parentName, setParentName] = useState<string>("보호자");
   const [activeIdx, setActiveIdx] = useState(0);
+  const [showChildPicker, setShowChildPicker] = useState(false);
   const [latestReport, setLatestReport] = useState<Report | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
 
@@ -239,8 +241,22 @@ export default function ParentHomePage() {
   if (!mounted || syncingFamily) {
     return (
       <DemoFrame>
-        <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
-          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
+        <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
+          <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
+            <span className="w-5" />
+            <SkeletonBox className="w-20 h-6" />
+            <span className="w-5" />
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
+            <SkeletonBox className="h-[72px] mb-6" />
+            <SkeletonBox className="w-28 h-5 mb-3" />
+            <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3`}>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <SkeletonBox key={i} className="h-24" />
+              ))}
+            </div>
+          </div>
+          <div className="h-16 shrink-0 border-t" style={{ borderColor: "#f3f4f6" }} />
         </div>
       </DemoFrame>
     );
@@ -528,12 +544,8 @@ export default function ParentHomePage() {
     lastChatDate = `${y}.${m}.${day}`;
   }
 
-  // 프로필 클릭 시 다음 아동으로 순환 토글 핸들러
-  const handleProfileClick = () => {
-    if (children.length > 1) {
-      setActiveIdx((prev) => (prev + 1) % children.length);
-    }
-  };
+  const ORDINAL_LABELS = ["첫째", "둘째", "셋째", "넷째", "다섯째"];
+  const ordinalLabel = (idx: number) => ORDINAL_LABELS[idx] ?? `${idx + 1}번째`;
 
   // 대시보드 카드 구성
   const dbCards = latestReport?.dashboard_cards ?? {};
@@ -579,9 +591,9 @@ export default function ParentHomePage() {
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
-          {/* 프로필 카드 (여러 명인 경우 클릭 시 순환) */}
+          {/* 프로필 카드 (여러 명인 경우 "전환" 클릭 시 아이 선택 목록 표시) */}
           <div
-            onClick={handleProfileClick}
+            onClick={() => { if (children.length > 1) setShowChildPicker(true); }}
             className={`flex items-center justify-between bg-white rounded-2xl px-4 py-4 shadow-sm mb-6 ${
               children.length > 1 ? "cursor-pointer active:scale-[0.99] hover:bg-gray-50/50" : ""
             }`}
@@ -624,8 +636,10 @@ export default function ParentHomePage() {
           </h2>
 
           {reportLoading ? (
-            <div className="py-20 flex items-center justify-center bg-white rounded-2xl shadow-sm">
-              <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
+            <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3 mb-8`}>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <SkeletonBox key={i} className="h-24" />
+              ))}
             </div>
           ) : (
             <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3 mb-8`}>
@@ -650,6 +664,41 @@ export default function ParentHomePage() {
         </div>
 
         <RealParentNav active="홈" />
+
+        {/* 아이 선택 목록 — 첫째/둘째/셋째 순서(children은 API에서 created_at 오름차순으로 옴) */}
+        {showChildPicker && (
+          <div
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
+            onClick={() => setShowChildPicker(false)}
+          >
+            <div
+              className="w-full max-w-xs bg-white rounded-2xl p-4 shadow-lg flex flex-col gap-2"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="text-sm font-bold text-center py-1.5" style={{ color: "#1e1e2d" }}>
+                아이 선택
+              </p>
+              {children.map((c, idx) => {
+                const isSelected = idx === activeIdx;
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => {
+                      setActiveIdx(idx);
+                      setShowChildPicker(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl border text-sm font-bold cursor-pointer ${
+                      isSelected ? "bg-[#fdf1ec] border-[#e8845a] text-[#e8845a]" : "bg-white border-gray-200 text-gray-700"
+                    }`}
+                  >
+                    <span>🧒 {ordinalLabel(idx)} · {c.name} ({c.grade})</span>
+                    {isSelected && <span className="text-[10px] bg-[#e8845a] text-white px-2 py-0.5 rounded-full">선택됨</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </DemoFrame>
   );

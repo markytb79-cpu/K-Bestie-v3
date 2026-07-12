@@ -40,6 +40,7 @@ export async function GET(
   }
 
   // ── 데이터 조회: service client로 RLS 없이 전체 조회 ─────────────
+  // child_profiles는 created_at 오름차순 — 첫째/둘째/셋째 순서(아이 전환 목록 등)의 기준.
   const { data: family, error } = await svc
     .from("families")
     .select(`
@@ -48,6 +49,7 @@ export async function GET(
       child_profiles(id, name, grade, interests, created_at, tier)
     `)
     .eq("id", id)
+    .order("created_at", { referencedTable: "child_profiles", ascending: true })
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
