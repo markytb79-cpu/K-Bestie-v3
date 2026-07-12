@@ -38,7 +38,7 @@ export async function PATCH(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { name?: string; grade?: string; interests?: string[]; liveVoiceName?: string };
+  let body: { name?: string; grade?: string; interests?: string[]; liveVoiceName?: string; tier?: number };
   try {
     body = await req.json();
   } catch {
@@ -54,6 +54,12 @@ export async function PATCH(
       return NextResponse.json({ error: "지원하지 않는 목소리입니다" }, { status: 400 });
     }
     updateData.live_voice_name = body.liveVoiceName;
+  }
+  if (body.tier !== undefined) {
+    if (![1, 2, 3].includes(body.tier)) {
+      return NextResponse.json({ error: "지원하지 않는 요금제입니다" }, { status: 400 });
+    }
+    updateData.tier = body.tier;
   }
 
   if (Object.keys(updateData).length === 0) {

@@ -18,6 +18,13 @@ import {
 
 const GRADES = ["1학년", "2학년", "3학년", "4학년", "5학년", "6학년"];
 const INTERESTS = ["공룡", "우주", "동물", "그림", "음악", "스포츠", "요리", "게임", "과학", "책"];
+// plans 테이블(tier 1/2/3) 기준 사용자용 이름 — 내부 tier 숫자는 화면에 노출하지 않는다.
+// TODO: 정식 오픈 시 결제 연동으로 전환 필요 — 자세한 건 FUTURE_TODO.md 참고.
+const CARE_PLANS: { tier: number; label: string }[] = [
+  { tier: 1, label: "케어 스타트" },
+  { tier: 2, label: "케어 인사이트" },
+  { tier: 3, label: "케어 프리미엄" },
+];
 
 interface Question {
   id: string;
@@ -63,6 +70,8 @@ export default function ParentSettingsPage() {
   const [editName, setEditName] = useState("");
   const [editGrade, setEditGrade] = useState("");
   const [editInterests, setEditInterests] = useState<string[]>([]);
+  const [editTier, setEditTier] = useState<number>(1);
+  const [savingTier, setSavingTier] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // 가입 신청 목록 및 로딩 상태
@@ -78,7 +87,7 @@ export default function ParentSettingsPage() {
   const [nicknameSuccess, setNicknameSuccess] = useState(false);
 
   // 아코디언 토글 상태 (기본은 닫힘)
-  const [activeMenu, setActiveMenu] = useState<"add_child" | "select_child" | "profile_manage" | null>(null);
+  const [activeMenu, setActiveMenu] = useState<"add_child" | "select_child" | "edit_child" | "family_members" | null>(null);
 
   // 로그인 이메일 및 구성원 정보 로드
   useEffect(() => {
@@ -158,6 +167,7 @@ export default function ParentSettingsPage() {
           childId: childProf?.id || "",
           grade: childProf?.grade || "",
           interests: childProf?.interests || [],
+          tier: childProf?.tier ?? 1,
           parentEmail: m.parent_email || ""
         };
       });
@@ -352,7 +362,7 @@ export default function ParentSettingsPage() {
     );
   }
 
-  const menuToggle = (menu: "add_child" | "select_child" | "profile_manage") => {
+  const menuToggle = (menu: "add_child" | "select_child" | "edit_child" | "family_members") => {
     setActiveMenu((prev) => (prev === menu ? null : menu));
     setAddError(null);
   };
@@ -531,9 +541,9 @@ export default function ParentSettingsPage() {
             )}
           </div>
 
-          {/* 3. 아이 프로필 정보 등록 / 보호자/알림 통합 설정 메뉴 카드 */}
+          {/* 3. 아이 프로필 정보 등록 메뉴 카드 (자녀 프로필 수정 전용) */}
           <div
-            onClick={() => menuToggle("profile_manage")}
+            onClick={() => menuToggle("edit_child")}
             className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 cursor-pointer"
           >
             <div className="flex items-center gap-3">
@@ -542,12 +552,169 @@ export default function ParentSettingsPage() {
               </div>
               <div className="flex-1">
                 <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>아이 프로필 정보 등록</p>
-                <p className="text-[11px]" style={{ color: "#6b7280" }}>이름, 학년, 가족 구성원 등을 관리해요</p>
+                <p className="text-[11px]" style={{ color: "#6b7280" }}>이름, 학년, 관심사, 요금제를 관리해요</p>
               </div>
-              <span className="text-sm" style={{ color: "#6b7280", transform: activeMenu === "profile_manage" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
+              <span className="text-sm" style={{ color: "#6b7280", transform: activeMenu === "edit_child" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
             </div>
 
-            {activeMenu === "profile_manage" && (
+            {activeMenu === "edit_child" && (
+              <div className="pt-3 border-t border-gray-100 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+                {/* 자녀 정보 수정 폼 */}
+                {familyMembers.filter(m => m.role === "child").length === 0 ? (
+                  <p className="text-xs text-gray-400 text-center py-3">등록된 자녀가 없습니다.</p>
+                ) : (
+                  <div className="flex flex-col gap-2 p-3 bg-gray-50/50 rounded-xl border border-gray-150">
+                    <p className="text-[10px] font-bold text-gray-500">자녀 프로필 수정</p>
+                    <div className="flex flex-col gap-2">
+                      {familyMembers.filter(m => m.role === "child").map((m) => (
+                        <div key={m.memberId} className="bg-white border border-gray-100 rounded-xl p-2.5 flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-gray-800">🧒 {m.displayName} ({m.grade})</span>
+                            <button
+                              onClick={() => {
+                                setEditChild({
+                                  id: m.childId,
+                                  name: m.displayName,
+                                  grade: m.grade,
+                                  interests: m.interests
+                                });
+                                setEditName(m.displayName);
+                                setEditGrade(m.grade);
+                                setEditInterests(m.interests ?? []);
+                                setEditTier(m.tier ?? 1);
+                              }}
+                              className="text-[10px] bg-[#f3f4f6] text-gray-600 font-bold px-2.5 py-1 rounded-lg cursor-pointer"
+                            >
+                              수정하기
+                            </button>
+                          </div>
+
+                          {editChild && editChild.id === m.childId && (
+                            <div className="mt-2 flex flex-col gap-3 pt-2.5 border-t border-dashed border-gray-100">
+                              <input
+                                type="text"
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                                className="px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-gray-50/50 outline-none"
+                              />
+                              <div>
+                                <p className="text-[9px] text-gray-400 mb-1">학년</p>
+                                <div className="grid grid-cols-3 gap-1">
+                                  {GRADES.map((g) => (
+                                    <button
+                                      key={g}
+                                      onClick={() => setEditGrade(g)}
+                                      className={`py-1 text-[9px] font-bold border rounded-lg ${
+                                        editGrade === g ? "bg-[#1a6b5a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
+                                      }`}
+                                    >
+                                      {g}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div>
+                                <p className="text-[9px] text-gray-400 mb-1">관심사</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {INTERESTS.map((interest) => {
+                                    const has = editInterests.includes(interest);
+                                    return (
+                                      <button
+                                        key={interest}
+                                        onClick={() => toggleInterest(interest, true)}
+                                        className={`px-2.5 py-0.5 text-[9px] font-bold border rounded-full ${
+                                          has ? "bg-[#e8845a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
+                                        }`}
+                                      >
+                                        {interest}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              <div>
+                                <p className="text-[9px] text-gray-400 mb-1">요금제</p>
+                                <div className="grid grid-cols-3 gap-1">
+                                  {CARE_PLANS.map((p) => (
+                                    <button
+                                      key={p.tier}
+                                      onClick={() => setEditTier(p.tier)}
+                                      className={`py-1 text-[9px] font-bold border rounded-lg ${
+                                        editTier === p.tier ? "bg-[#1a6b5a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
+                                      }`}
+                                    >
+                                      {p.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="flex gap-2 mt-1">
+                                <button
+                                  onClick={async () => {
+                                    if (!editName.trim()) return;
+                                    updateChild(editChild.id, {
+                                      name: editName.trim(),
+                                      grade: editGrade,
+                                      interests: editInterests,
+                                    });
+                                    if (editTier !== (m.tier ?? 1)) {
+                                      setSavingTier(true);
+                                      try {
+                                        await fetch(`/api/child/${editChild.id}`, {
+                                          method: "PATCH",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ tier: editTier }),
+                                        });
+                                      } catch {} finally {
+                                        setSavingTier(false);
+                                      }
+                                    }
+                                    setEditChild(null);
+                                    loadFamilyMembers();
+                                  }}
+                                  disabled={savingTier}
+                                  className="flex-1 py-1.5 bg-[#1a6b5a] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
+                                >
+                                  {savingTier ? "저장중" : "저장"}
+                                </button>
+                                <button
+                                  onClick={() => setEditChild(null)}
+                                  className="flex-1 py-1.5 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer"
+                                >
+                                  취소
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 4. 가족 구성원 관리 메뉴 카드 (보호자 이름/알림/가족 구성원 목록) */}
+          <div
+            onClick={() => menuToggle("family_members")}
+            className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0" style={{ background: "#f3f4f6" }}>
+                👨‍👩‍👧
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>가족 구성원 관리</p>
+                <p className="text-[11px]" style={{ color: "#6b7280" }}>내 이름, 알림, 보호자 구성원을 관리해요</p>
+              </div>
+              <span className="text-sm" style={{ color: "#6b7280", transform: activeMenu === "family_members" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
+            </div>
+
+            {activeMenu === "family_members" && (
               <div className="pt-3 border-t border-gray-100 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
                 {/* 닉네임 설정 */}
                 <div className="flex flex-col gap-2 p-3 bg-gray-50/50 rounded-xl border border-gray-150">
@@ -638,109 +805,6 @@ export default function ParentSettingsPage() {
                     </div>
                   )}
                 </div>
-
-                {/* 자녀 정보 수정 폼 */}
-                {familyMembers.filter(m => m.role === "child").length > 0 && (
-                  <div className="flex flex-col gap-2 p-3 bg-gray-50/50 rounded-xl border border-gray-150">
-                    <p className="text-[10px] font-bold text-gray-500">자녀 프로필 수정</p>
-                    <div className="flex flex-col gap-2">
-                      {familyMembers.filter(m => m.role === "child").map((m) => (
-                        <div key={m.memberId} className="bg-white border border-gray-100 rounded-xl p-2.5 flex flex-col gap-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-gray-800">🧒 {m.displayName} ({m.grade})</span>
-                            <button
-                              onClick={() => {
-                                setEditChild({
-                                  id: m.childId,
-                                  name: m.displayName,
-                                  grade: m.grade,
-                                  interests: m.interests
-                                });
-                                setEditName(m.displayName);
-                                setEditGrade(m.grade);
-                                setEditInterests(m.interests ?? []);
-                              }}
-                              className="text-[10px] bg-[#f3f4f6] text-gray-600 font-bold px-2.5 py-1 rounded-lg cursor-pointer"
-                            >
-                              수정하기
-                            </button>
-                          </div>
-
-                          {editChild && editChild.id === m.childId && (
-                            <div className="mt-2 flex flex-col gap-3 pt-2.5 border-t border-dashed border-gray-100">
-                              <input
-                                type="text"
-                                value={editName}
-                                onChange={(e) => setEditName(e.target.value)}
-                                className="px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-gray-50/50 outline-none"
-                              />
-                              <div>
-                                <p className="text-[9px] text-gray-400 mb-1">학년</p>
-                                <div className="grid grid-cols-3 gap-1">
-                                  {GRADES.map((g) => (
-                                    <button
-                                      key={g}
-                                      onClick={() => setEditGrade(g)}
-                                      className={`py-1 text-[9px] font-bold border rounded-lg ${
-                                        editGrade === g ? "bg-[#1a6b5a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
-                                      }`}
-                                    >
-                                      {g}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              <div>
-                                <p className="text-[9px] text-gray-400 mb-1">관심사</p>
-                                <div className="flex flex-wrap gap-1">
-                                  {INTERESTS.map((interest) => {
-                                    const has = editInterests.includes(interest);
-                                    return (
-                                      <button
-                                        key={interest}
-                                        onClick={() => toggleInterest(interest, true)}
-                                        className={`px-2.5 py-0.5 text-[9px] font-bold border rounded-full ${
-                                          has ? "bg-[#e8845a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
-                                        }`}
-                                      >
-                                        {interest}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-
-                              <div className="flex gap-2 mt-1">
-                                <button
-                                  onClick={() => {
-                                    if (!editName.trim()) return;
-                                    updateChild(editChild.id, {
-                                      name: editName.trim(),
-                                      grade: editGrade,
-                                      interests: editInterests,
-                                    });
-                                    setEditChild(null);
-                                    loadFamilyMembers();
-                                  }}
-                                  className="flex-1 py-1.5 bg-[#1a6b5a] text-white text-[10px] font-bold rounded-lg cursor-pointer"
-                                >
-                                  저장
-                                </button>
-                                <button
-                                  onClick={() => setEditChild(null)}
-                                  className="flex-1 py-1.5 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer"
-                                >
-                                  취소
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </div>

@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 
 // 테스트 단계 비용 절감을 위해 flash-lite로 임시 통일(2026-07-12).
 // 되돌리려면(정식 운영 시 품질 우선): 아래 값을 "gemini-2.5-flash"로 바꾸면 됨 — 2.5-flash로 업그레이드 검토.
+// TODO: 음성 대화 안정화 후 재검토 — 자세한 건 FUTURE_TODO.md 참고.
 const MISSION_CONVERSATION_MODEL_ID = "gemini-flash-lite-latest";
 
 interface HistoryTurn { role: "child" | "k"; text: string }

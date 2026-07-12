@@ -45,7 +45,7 @@ export async function GET(
     .select(`
       id, name, created_by, created_at,
       family_members(id, user_id, role, joined_at),
-      child_profiles(id, name, grade, interests, created_at)
+      child_profiles(id, name, grade, interests, created_at, tier)
     `)
     .eq("id", id)
     .single();

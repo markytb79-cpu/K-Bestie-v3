@@ -5,6 +5,7 @@ import { K_SYSTEM_PROMPT } from "@/app/api/_lib/prompts";
 
 export const runtime = "nodejs";
 
+// TODO: Tier3 하루 사용시간 상한(cap) 체크를 여기 추가할 것 — 자세한 건 FUTURE_TODO.md 참고.
 export async function POST() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {

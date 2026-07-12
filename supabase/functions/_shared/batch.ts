@@ -1,5 +1,7 @@
 // Supabase Edge Function 공용 배치 로직 (Deno 런타임)
 //
+// TODO: 대화 내역(chat_messages) 7일 경과 자동 파기 스텝 추가 필요 — 자세한 건 FUTURE_TODO.md 참고.
+//
 // ⚠️ 운영 스케줄의 소스오브트루스 = 이 Edge Function 코드.
 //    Next.js 쪽 lib/batch/*.ts + app/api/batch/daily/route.ts 는 로컬 수동 테스트 전용이며
 //    운영 크론 경로가 아니다. 로직 변경 시 양쪽을 함께 맞춰야 한다.
