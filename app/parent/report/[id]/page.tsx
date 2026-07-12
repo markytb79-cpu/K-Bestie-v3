@@ -6,6 +6,7 @@ import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
 import { useDemoView } from "@/app/demo/components/DemoViewContext";
+import { ReportDetailSkeleton } from "./ReportDetailSkeleton";
 
 type EmotionLevel = "safe" | "warning" | "danger";
 
@@ -68,9 +69,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
   if (loading) {
     return (
       <DemoFrame>
-        <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
-          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
-        </div>
+        <ReportDetailSkeleton />
       </DemoFrame>
     );
   }
