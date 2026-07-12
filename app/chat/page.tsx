@@ -56,7 +56,7 @@ export default function ChatPage() {
     sayText,
     sendTypedText,
     setMicEnabled,
-  } = useVoiceChat({ onTurnComplete: handleTurnComplete });
+  } = useVoiceChat({ onTurnComplete: handleTurnComplete, getSessionId: () => sessionIdRef.current });
   respondTextRef.current = respondText;
 
   const status = mounted ? rawStatus : "idle";

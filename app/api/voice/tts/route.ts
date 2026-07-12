@@ -5,7 +5,20 @@ export const runtime = "nodejs";
 
 // 일반 Cloud Text-to-Speech Wavenet 보이스만 사용한다.
 // Gemini 계열 TTS(토큰 과금, 매우 비쌈)는 절대 쓰지 않는다 — text:synthesize REST 고정.
-const TTS_VOICE_NAME = "ko-KR-Neural2-A"; // 케이(밝고 친근한 톤)
+// 목소리 테스트 완료 후 ko-KR-Wavenet-A로 확정(Tier1/2, STT+TTS 경로 전용).
+const TTS_VOICE_NAME = "ko-KR-Wavenet-A";
+
+// TTS로 보낼 때만 발음되면 안 되는 특수문자를 제거/치환한다.
+// 화면 말풍선에 표시되는 원문 텍스트는 이 함수를 거치지 않는다(클라이언트가 별도로 보관).
+function sanitizeForTts(raw: string): string {
+  return raw
+    .replace(/[~〜～]/g, "")                                          // 물결표류 — "물결표"로 읽히는 문제
+    .replace(/\*/g, "")                                               // 별표
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}]/gu, "") // 이모지/화살표/기타 심볼
+    .replace(/[_^`]/g, "")                                            // 기타 발음되면 어색한 기호
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -17,7 +30,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "TTS not configured" }, { status: 500 });
   }
 
-  let body: { text?: string };
+  let body: { text?: string; voiceName?: string };
   try {
     body = await req.json();
   } catch {
@@ -28,6 +41,15 @@ export async function POST(req: NextRequest) {
   if (!text) {
     return NextResponse.json({ error: "text required" }, { status: 400 });
   }
+  const ttsText = sanitizeForTts(text);
+  if (!ttsText) {
+    return NextResponse.json({ error: "text empty after sanitize" }, { status: 400 });
+  }
+
+  // voiceName을 안 넘기면 확정된 기본값(ko-KR-Wavenet-A) 사용.
+  const voiceName = (typeof body.voiceName === "string" && body.voiceName.trim()) || TTS_VOICE_NAME;
+  // languageCode: 테스트 후보가 전부 ko-KR 계열이라 고정.
+  const languageCode = "ko-KR";
 
   try {
     const gcpRes = await fetch(
@@ -36,16 +58,17 @@ export async function POST(req: NextRequest) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          input: { text },
-          voice: { languageCode: "ko-KR", name: TTS_VOICE_NAME },
+          input: { text: ttsText },
+          voice: { languageCode, name: voiceName },
           audioConfig: { audioEncoding: "MP3", speakingRate: 1.02, pitch: 1.0 },
         }),
       }
     );
 
     if (!gcpRes.ok) {
-      console.error("[voice/tts] GCP TTS failed:", gcpRes.status);
-      return NextResponse.json({ error: "TTS request failed" }, { status: 500 });
+      const errBody = await gcpRes.text().catch(() => "");
+      console.error("[voice/tts] GCP TTS failed:", gcpRes.status, "voice:", voiceName, "body:", errBody);
+      return NextResponse.json({ error: "TTS request failed", voice: voiceName }, { status: 500 });
     }
 
     const data = (await gcpRes.json()) as { audioContent?: string };

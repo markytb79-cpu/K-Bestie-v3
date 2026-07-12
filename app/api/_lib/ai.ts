@@ -72,7 +72,8 @@ export const REPORT_MODELS: Record<string, ReportModelConfig> = {
 };
 
 // ── 현재 활성 모델 (여기만 바꾸면 전체 적용) ─────────────────
-export const ACTIVE_VOICE_MODEL_ID = "gemini-2.5-flash-native-audio-preview-12-2025";
+// Tier3(Premium, Live API 음성) 전용 모델 — 공식 transcription 지원(gemini-3.1-flash-live-preview).
+export const ACTIVE_VOICE_MODEL_ID = "gemini-3.1-flash-live-preview";
 export const ACTIVE_REPORT_MODEL_ID = "gemma-4-31b-it";
 
 export function getActiveVoiceModel(): VoiceModelConfig {

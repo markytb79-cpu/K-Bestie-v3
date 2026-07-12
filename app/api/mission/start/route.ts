@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { selectQuestions, parseGrade, type RoundType } from "@/lib/mission/selectQuestions";
+import { getVoiceModeForChild } from "@/lib/plan/voiceMode";
 
 export const runtime = "nodejs";
 
@@ -95,11 +96,16 @@ export async function POST(req: NextRequest) {
     .map((qid) => (questions ?? []).find((q) => q.id === qid))
     .filter(Boolean);
 
+  // 요금제(tier)별 음성 방식 — 미션 로직(정답판정/게이지/황금열쇠/라운드)과 무관한 부가 정보
+  const { tier, voiceMode } = await getVoiceModeForChild(childId);
+
   return NextResponse.json({
     sessionId: session.id,
     roundType,
     requiredCount: 5,
     questionIds,
     questions: ordered,
+    tier,
+    voiceMode,
   });
 }

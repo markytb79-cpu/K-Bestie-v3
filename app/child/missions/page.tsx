@@ -7,8 +7,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
 import { useVoiceChat, type Turn } from "@/hooks/useVoiceChat";
+import { useGeminiLive } from "@/hooks/useGeminiLive";
 
 type RoundType = "round1_day" | "round2_night" | "common";
+type VoiceMode = "stt_tts" | "live";
 
 interface MissionQuestion {
   id: string;
@@ -21,6 +23,41 @@ interface MissionQuestion {
 type QuestionState = "pending" | "answered" | "skipped" | "refused";
 
 const REQUIRED_COUNT = 5;
+
+// 🔧 임시 테스트용 — Live API(Gemini 3.1 flash live preview) 지원 보이스 전체 목록.
+// TODO: Live 목소리 확정 후 이 테스트 드롭다운(및 이 목록) 제거.
+const LIVE_TEST_VOICES: { name: string; label?: string }[] = [
+  { name: "Zephyr", label: "Bright" },
+  { name: "Puck", label: "Upbeat" },
+  { name: "Charon", label: "Informative" },
+  { name: "Kore", label: "Firm" },
+  { name: "Fenrir", label: "Excitable" },
+  { name: "Leda", label: "Youthful" },
+  { name: "Orus", label: "Firm" },
+  { name: "Aoede", label: "Breezy" },
+  { name: "Callirrhoe", label: "Easy-going" },
+  { name: "Autonoe", label: "Bright" },
+  { name: "Enceladus", label: "Breathy" },
+  { name: "Iapetus", label: "Clear" },
+  { name: "Umbriel", label: "Easy-going" },
+  { name: "Algieba", label: "Smooth" },
+  { name: "Despina", label: "Smooth" },
+  { name: "Erinome", label: "Clear" },
+  { name: "Algenib", label: "Gravelly" },
+  { name: "Rasalgethi", label: "Informative" },
+  { name: "Laomedeia", label: "Upbeat" },
+  { name: "Achernar", label: "Soft" },
+  { name: "Alnilam", label: "Firm" },
+  { name: "Schedar", label: "Even" },
+  { name: "Gacrux", label: "Mature" },
+  { name: "Pulcherrima", label: "Forward" },
+  { name: "Achird", label: "Friendly" },
+  { name: "Zubenelgenubi", label: "Casual" },
+  { name: "Vindemiatrix", label: "Gentle" },
+  { name: "Sadachbia", label: "Lively" },
+  { name: "Sadaltager", label: "Knowledgeable" },
+  { name: "Sulafat", label: "Warm" },
+];
 
 // ⚠️⚠️⚠️ 임시 테스트용 우회 (TEMP TEST BYPASS) ⚠️⚠️⚠️
 // 운영시간 게이트를 항상 통과시켜 시간과 무관하게 미션 테스트 가능하게 함.
@@ -54,6 +91,10 @@ function MissionInner() {
   const [completed, setCompleted] = useState(false);
   const [mode, setMode] = useState<"voice" | "text">("voice");
   const [textInput, setTextInput] = useState("");
+  // 요금제(tier)별 음성 방식 — /api/mission/start 응답으로 확정됨. 확정 전까지 null(로딩).
+  const [voiceMode, setVoiceMode] = useState<VoiceMode | null>(null);
+  // 🔧 임시 테스트용 — Tier3(Live) 전용 목소리 선택. TODO: Live 목소리 확정 후 제거.
+  const [testVoiceName, setTestVoiceName] = useState<string>("Aoede");
 
   const sessionIdRef = useRef<string | null>(null);
   const questionsRef = useRef<MissionQuestion[]>([]);
@@ -62,9 +103,10 @@ function MissionInner() {
   const askedIndexRef = useRef<number>(-1);
   const completedRef = useRef(false);
   const bubbleRef = useRef<HTMLDivElement>(null);
-  // askQuestion은 useVoiceChat(speak) 생성 이후에만 얻을 수 있어 ref로 우회
+  // askQuestion은 훅 생성 이후에만 얻을 수 있어 ref로 우회
   // (handleTurnComplete는 훅 생성 전에 정의되어야 하므로 직접 참조 불가)
   const askQuestionRef = useRef<((idx: number, customText?: string) => void) | undefined>(undefined);
+  const getTranscriptRef = useRef<(() => Turn[]) | undefined>(undefined);
 
   const saveMessage = useCallback((role: "child" | "k", content: string) => {
     const sid = sessionIdRef.current;
@@ -106,30 +148,19 @@ function MissionInner() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId: sid, questionId: question.id, answerText: turn.text }),
         });
-        console.log("[MISSION-DEBUG] /api/mission/answer status:", res.status);
-        if (!res.ok) {
-          const errBody = await res.text().catch(() => "");
-          console.error("[MISSION-DEBUG] answer !res.ok, body:", errBody);
-          return;
-        }
+        if (!res.ok) return;
         const data = await res.json();
-        console.log("[MISSION-DEBUG] answer response data:", data);
         questionStatesRef.current = data.questionStates ?? questionStatesRef.current;
         setGauge(data.validAnswerCount ?? 0);
 
         if (data.completed) {
-          console.log("[MISSION-DEBUG] mission completed, stopping ask loop");
           completedRef.current = true;
           setCompleted(true);
           return;
         }
 
         const next = pickNextIndex(questionStatesRef.current);
-        console.log("[MISSION-DEBUG] currentIndex:", currentIndexRef.current, "next:", next, "totalQuestions:", questionsRef.current.length);
-        if (next === -1) {
-          console.warn("[MISSION-DEBUG] pickNextIndex returned -1 — no more questions to ask, this is why K stays silent");
-          return;
-        }
+        if (next === -1) return;
 
         currentIndexRef.current = next;
 
@@ -137,79 +168,112 @@ function MissionInner() {
         const nextQ = questionsRef.current[next];
         if (nextQ) {
           try {
-            console.log("[MISSION-DEBUG] Calling /api/mission/respond for contextual question induction...");
             const respondRes = await fetch("/api/mission/respond", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                history: getTranscript(),
+                history: getTranscriptRef.current?.() ?? [],
                 nextQuestionText: nextQ.question_text,
               }),
             });
             if (respondRes.ok) {
               const respondData = await respondRes.json();
               if (respondData.text) {
-                console.log("[MISSION-DEBUG] Contextual question received:", respondData.text);
                 askQuestionRef.current?.(next, respondData.text);
                 return;
               }
             }
-          } catch (respondErr) {
-            console.error("[MISSION-DEBUG] Failed to fetch contextual response:", respondErr);
+          } catch {
+            // 실패 시 아래 순정 질문 텍스트로 폴백
           }
-          // 실패 시 순정 질문 텍스트로 폴백
-          console.log("[MISSION-DEBUG] Falling back to standard question text:", nextQ.question_text);
           askQuestionRef.current?.(next);
         }
-      } catch (err) {
-        console.error("[MISSION-DEBUG] handleTurnComplete caught exception:", err);
+      } catch {
+        // 에러 시 재시도
       }
     })();
   }, [saveMessage, pickNextIndex]);
 
-  // Gemini Live 네이티브 오디오 폐기 — STT(/api/mission/stt 주기호출)+텍스트+TTS(Wavenet) 파이프라인.
-  // 케이 발화는 미리 정해진 질문 문구를 speak()로 그대로 TTS 재생(LLM 생성 없음).
-  const {
-    status, transcript, interimChildText,
-    startSession, stopSession, speak, sendTypedText, setMicEnabled,
-    getTranscript,
-  } = useVoiceChat({
-    onTurnComplete: handleTurnComplete,
-  });
+  // 두 음성 백엔드를 항상 함께 마운트해두고(리액트 훅 규칙상 조건부 호출 불가),
+  // voiceMode(tier)에 따라 실제로 사용하는 쪽만 startSession되도록 분기한다.
+  // - stt_tts (Tier1/2): GCP STT(주기호출) + Wavenet-A TTS
+  // - live (Tier3): Gemini Live API 네이티브 오디오(gemini-3.1-flash-live-preview)
+  const sttTts = useVoiceChat({ onTurnComplete: handleTurnComplete });
+  const live = useGeminiLive({ onTurnComplete: handleTurnComplete, voiceName: testVoiceName });
+
+  const isLiveMode = voiceMode === "live";
+
+  const voice = isLiveMode
+    ? {
+        status: live.status as string,
+        transcript: live.transcript,
+        interimChildText: live.interimChildText,
+        startSession: live.startSession,
+        stopSession: live.stopSession,
+        setMicEnabled: live.setMicEnabled,
+        sendTypedText: live.sendText,
+        getTranscript: live.getTranscript,
+      }
+    : {
+        status: sttTts.status as string,
+        transcript: sttTts.transcript,
+        interimChildText: sttTts.interimChildText,
+        startSession: sttTts.startSession,
+        stopSession: sttTts.stopSession,
+        setMicEnabled: sttTts.setMicEnabled,
+        sendTypedText: sttTts.sendTypedText,
+        getTranscript: sttTts.getTranscript,
+      };
+
+  getTranscriptRef.current = voice.getTranscript;
 
   const askQuestion = useCallback((idx: number, customText?: string) => {
-    console.log("[MISSION-DEBUG] askQuestion called, idx:", idx, "customText:", customText);
     const q = questionsRef.current[idx];
     if (!q) return;
     askedIndexRef.current = idx;
     const textToSpeak = customText || q.question_text;
-    void speak(textToSpeak).then(() => {
-      console.log("[MISSION-DEBUG] speak() finished for idx:", idx);
-    });
-  }, [speak]);
+    if (isLiveMode) {
+      live.speakAsK(textToSpeak);
+    } else {
+      void sttTts.speak(textToSpeak); // voiceName 생략 — 서버 기본값(ko-KR-Wavenet-A) 사용
+    }
+  }, [isLiveMode, live, sttTts]);
   askQuestionRef.current = askQuestion;
+
+  // 🔧 임시 테스트용 — Live 목소리 변경 시 즉시 반영을 위해 세션 재연결.
+  // Live API는 연결 시점(speechConfig)에 보이스가 확정되므로 변경만으로는 반영되지 않는다.
+  // TODO: Live 목소리 확정 후 이 핸들러 및 관련 UI 제거.
+  const handleTestVoiceChange = useCallback((name: string) => {
+    setTestVoiceName(name);
+    if (!isLiveMode) return;
+    live.stopSession();
+    // stopSession()의 teardown이 동기적으로 끝나므로 다음 tick에 재연결(voiceNameRef는 이미 최신값 반영됨)
+    setTimeout(() => {
+      live.startSession({ preserveHistory: true });
+    }, 0);
+  }, [isLiveMode, live]);
 
   const switchToText = useCallback(() => {
     setMode("text");
-    setMicEnabled(false);
-  }, [setMicEnabled]);
+    voice.setMicEnabled(false);
+  }, [voice]);
 
   const switchToVoice = useCallback(() => {
     setMode("voice");
-    setMicEnabled(true);
-  }, [setMicEnabled]);
+    voice.setMicEnabled(true);
+  }, [voice]);
 
   const handleSendText = useCallback(() => {
     const text = textInput.trim();
     if (!text) return;
     setTextInput("");
-    sendTypedText(text);
-  }, [textInput, sendTypedText]);
+    voice.sendTypedText(text);
+  }, [textInput, voice]);
 
   const handleClose = useCallback(() => {
-    stopSession();
+    voice.stopSession();
     router.replace("/child/home");
-  }, [stopSession, router]);
+  }, [voice, router]);
 
   useEffect(() => {
     const qpChild = searchParams.get("childId");
@@ -258,6 +322,7 @@ function MissionInner() {
         const initStates: Record<string, QuestionState> = {};
         for (const q of qs) initStates[q.id] = "pending";
         questionStatesRef.current = initStates;
+        setVoiceMode((data.voiceMode as VoiceMode) ?? "stt_tts");
         setPhase("ready");
       } catch (e) {
         if (cancelled) return;
@@ -269,27 +334,30 @@ function MissionInner() {
   }, [searchParams, router]);
 
   useEffect(() => {
-    if (phase === "ready" && status === "idle") {
-      startSession();
+    if (phase === "ready" && voiceMode && voice.status === "idle") {
+      voice.startSession();
     }
-  }, [phase, status, startSession]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, voiceMode, voice.status]);
 
   // 세션 시작 후 최초 1회만 첫 질문을 묻는다. 이후 질문은 handleTurnComplete에서
   // 답변 처리 완료 시점에 askQuestionRef를 통해 직접 트리거된다(ref 변화는 effect를
   // 재실행시키지 않으므로, "다음 질문"을 이 effect가 알아채길 기다리면 안 됨).
   useEffect(() => {
-    if (status !== "live" || completed) return;
+    if (voice.status !== "live" || completed) return;
     if (askedIndexRef.current !== -1) return;
     askQuestion(currentIndexRef.current);
-  }, [status, completed, askQuestion]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.status, completed, askQuestion]);
 
   useEffect(() => {
-    if (completed) stopSession();
-  }, [completed, stopSession]);
+    if (completed) voice.stopSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completed]);
 
   useEffect(() => {
     bubbleRef.current?.scrollTo({ top: bubbleRef.current.scrollHeight, behavior: "smooth" });
-  }, [transcript, interimChildText]);
+  }, [voice.transcript, voice.interimChildText]);
 
   if (phase === "loading") {
     return (
@@ -337,8 +405,8 @@ function MissionInner() {
     );
   }
 
-  const isConnecting = status === "connecting";
-  const isLive = status === "live";
+  const isConnecting = voice.status === "connecting";
+  const isLive = voice.status === "live";
   const isDone = completed || gauge >= REQUIRED_COUNT;
   const missionPercent = Math.min(gauge * 20, 100);
 
@@ -383,6 +451,27 @@ function MissionInner() {
           </div>
         </div>
 
+        {/* 🔧 임시 테스트용 — Tier3(Live) 화면에서만 노출. TODO: Live 목소리 확정 후 제거. */}
+        {isLiveMode && (
+          <div className="px-6 pb-2 flex items-center justify-center gap-2">
+            <label className="text-[11px] text-gray-400" htmlFor="live-test-voice">
+              🔧 Live 목소리 테스트(임시)
+            </label>
+            <select
+              id="live-test-voice"
+              value={testVoiceName}
+              onChange={(e) => handleTestVoiceChange(e.target.value)}
+              className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 bg-white cursor-pointer"
+            >
+              {LIVE_TEST_VOICES.map((v) => (
+                <option key={v.name} value={v.name}>
+                  {v.name}{v.label ? ` (${v.label})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="flex justify-center mb-4">
           <Image
             src="/Images/mascot/mascot-standing.png"
@@ -400,14 +489,14 @@ function MissionInner() {
         ref={bubbleRef}
         className="flex-1 min-h-0 px-4 flex flex-col gap-3 overflow-y-auto pb-4"
       >
-        {transcript.length === 0 ? (
+        {voice.transcript.length === 0 ? (
           <div className="flex items-center justify-center h-full text-center p-4">
             <p className="text-xs" style={{ color: "#9ca3af" }}>
               곧 케이가 첫 질문을 해줄 거예요 🌿
             </p>
           </div>
         ) : (
-          transcript.map((turn, i) => (
+          voice.transcript.map((turn, i) => (
             <div
               key={i}
               className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
@@ -424,7 +513,7 @@ function MissionInner() {
           ))
         )}
         {/* 아이가 말하는 도중의 실시간 중간 자막 — 확정 전이라 옅게 표시 */}
-        {interimChildText && (
+        {voice.interimChildText && (
           <div
             className="max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed self-end opacity-60"
             style={{
@@ -433,7 +522,7 @@ function MissionInner() {
               borderRadius: "16px 16px 2px 16px",
             }}
           >
-            {interimChildText}
+            {voice.interimChildText}
           </div>
         )}
       </div>
@@ -459,7 +548,7 @@ function MissionInner() {
             <div className="relative flex items-center justify-center">
               <div className="absolute w-16 h-16 rounded-full bg-orange-400/20 animate-ping pointer-events-none" />
               <button
-                onClick={() => stopSession()}
+                onClick={() => voice.stopSession()}
                 className="relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer bg-gradient-to-br from-orange-400 to-orange-500"
                 aria-label="마이크 끄기"
               >
@@ -472,7 +561,7 @@ function MissionInner() {
 
           {!isLive && !isConnecting && !isDone && (
             <button
-              onClick={() => startSession()}
+              onClick={() => voice.startSession()}
               className="w-16 h-16 rounded-full flex items-center justify-center text-2xl text-white shadow-md transition-transform active:scale-95 cursor-pointer"
               style={{ background: "#e8845a" }}
               aria-label="마이크 켜기"

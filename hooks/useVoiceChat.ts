@@ -14,6 +14,8 @@ export interface Turn { role: "child" | "k"; text: string }
 export interface UseVoiceChatOptions {
   /** 한 턴이 완전히 끝날 때마다 호출 (child: 발화 확정 시, k: 말하기 시작 시) */
   onTurnComplete?: (turn: Turn) => void;
+  /** 현재 chat_sessions.id를 반환. respondText()가 안전 이벤트 저장을 위해 /api/voice/respond에 함께 전송한다. */
+  getSessionId?: () => string | null;
 }
 
 const POLL_INTERVAL_MS = 1300;       // 중간 자막 갱신 주기
@@ -60,6 +62,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   // 이미 확정(final)된 뒤에 뒤늦게 도착하는 중간(interim) 응답이 확정 말풍선과
   // 동일 내용으로 다시 표시되는 중복 버그 방지용(경합 시 이전 세대 응답은 폐기).
   const utteranceEpochRef = useRef(0);
+  // speak() 세대 카운터 — 케이 발화(TTS) 호출마다 증가.
+  // 새 speak() 호출은 이전 재생 중인 오디오를 즉시 중단시키고, 이전 호출의 응답/재생은
+  // 전부 폐기한다(single-audio 보장, 말풍선·음성 중복 표시 방지).
+  const speakEpochRef = useRef(0);
 
   function updateStatus(s: SessionStatus) {
     statusRef.current = s;
@@ -224,35 +230,59 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     micEnabledRef.current = enabled;
   }, []);
 
-  /** 케이 발화 재생 — TTS 합성 후 오디오 재생. 재생 중엔 마이크 캡처를 잠시 멈춘다(에코 방지). */
-  const speak = useCallback(async (text: string) => {
+  /** 케이 발화 재생 — TTS 합성 후 오디오 재생. 재생 중엔 마이크 캡처를 잠시 멈춘다(에코 방지).
+   *  새 호출 시 이전 재생 중인 오디오를 즉시 중단하고, 이전 호출의 응답/재생은 전부 폐기해서
+   *  절대 두 음성이 동시에 겹치거나 말풍선이 중복 표시되지 않도록 보장한다(single-audio). */
+  // ⚠️ voiceName은 임시 목소리 비교 테스트용 파라미터(미확정, 나중에 제거 예정).
+  // 넘기지 않으면 /api/voice/tts의 기본 보이스가 그대로 적용됨(기존 동작 불변).
+  // 반환값(boolean)은 TTS 합성이 실제로 성공했는지 여부 — 임시 목소리 테스트 UI가
+  // 실패한 보이스를 감지해 안내하는 용도로만 쓰인다(기존 호출부는 반환값 무시해도 무방).
+  const speak = useCallback(async (text: string, voiceName?: string): Promise<boolean> => {
     const trimmed = text.trim();
-    console.log("[MISSION-DEBUG] speak() invoked, text:", trimmed);
-    if (!trimmed) return;
+    console.log("[MISSION-DEBUG] speak() invoked, text:", trimmed, "voiceName:", voiceName);
+    if (!trimmed) return false;
+
+    // 새 발화 세대로 전환 — 이전 세대의 진행 중이던 응답/재생은 이후 전부 무시됨
+    const epoch = ++speakEpochRef.current;
+
+    // 이전에 재생 중이던 오디오가 있으면 즉시 중단(겹침 방지)
+    if (audioElRef.current) {
+      try {
+        audioElRef.current.pause();
+        audioElRef.current.currentTime = 0;
+      } catch { /* 이미 정지된 경우 무시 */ }
+      audioElRef.current = null;
+    }
 
     speakingRef.current = true;
     setIsSpeaking(true);
     let spoken = false;
+    let ttsOk = false; // TTS 합성 자체가 성공했는지(목소리 테스트 성공/실패 판정용)
 
     try {
       const res = await fetch("/api/voice/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: trimmed }),
+        body: JSON.stringify(voiceName ? { text: trimmed, voiceName } : { text: trimmed }),
       });
       console.log("[MISSION-DEBUG] /api/voice/tts status:", res.status);
+      if (epoch !== speakEpochRef.current) { console.log("[MISSION-DEBUG] speak() epoch superseded, discarding tts response"); return false; }
       if (!res.ok) {
         const errBody = await res.text().catch(() => "");
-        console.error("[MISSION-DEBUG] tts !res.ok, body:", errBody);
+        console.error("[MISSION-DEBUG] tts !res.ok, voice:", voiceName, "body:", errBody);
         throw new Error("TTS response not ok");
       }
       const data = await res.json();
+      if (epoch !== speakEpochRef.current) return false;
       if (!data.audioContent) {
         console.error("[MISSION-DEBUG] tts response missing audioContent:", data);
         throw new Error("TTS audioContent missing");
       }
+      ttsOk = true;
 
       const audio = new Audio(`data:${data.mimeType ?? "audio/mp3"};base64,${data.audioContent}`);
+      if (epoch !== speakEpochRef.current) return false; // 오디오 객체 생성 사이에 또 새 speak()가 호출된 경우 대비
+
       audioElRef.current = audio;
 
       // 음성 재생 개시 시점에 맞추어 자막 출력
@@ -266,17 +296,20 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         audio.play().catch((e) => { console.error("[MISSION-DEBUG] audio.play() rejected:", e); resolve(); });
       });
     } catch (err) {
-      console.error("[MISSION-DEBUG] speak() caught exception:", err);
-      // TTS가 실패하더라도 자막은 반드시 출력
-      if (!spoken) {
+      console.error("[MISSION-DEBUG] speak() caught exception:", err, "voice:", voiceName);
+      // TTS가 실패하더라도 자막은 반드시 출력(단, 이 호출이 여전히 최신 세대일 때만)
+      if (!spoken && epoch === speakEpochRef.current) {
         appendTurn({ role: "k", text: trimmed });
         onTurnCompleteRef.current?.({ role: "k", text: trimmed });
       }
     } finally {
-      speakingRef.current = false;
-      setIsSpeaking(false);
-      audioElRef.current = null;
+      if (epoch === speakEpochRef.current) {
+        speakingRef.current = false;
+        setIsSpeaking(false);
+        audioElRef.current = null;
+      }
     }
+    return ttsOk;
   }, []);
 
   /** 자유대화용 — 현재까지의 대화 기록으로 Gemini 텍스트 응답을 생성해 말풍선에만 표시.
@@ -286,7 +319,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       const res = await fetch("/api/voice/respond", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ history: transcriptRef.current }),
+        body: JSON.stringify({
+          history: transcriptRef.current,
+          sessionId: options?.getSessionId?.() ?? null,
+        }),
       });
       if (!res.ok) return;
       const data = await res.json();

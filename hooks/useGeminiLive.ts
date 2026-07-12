@@ -19,6 +19,9 @@ export interface UseGeminiLiveOptions {
    *  - "gcp": child 턴 오디오를 /api/mission/stt(GCP Speech-to-Text)로 전사 (미션 전용)
    */
   sttMode?: "gemini" | "gcp";
+  /** Live API 음성(speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName). 기본값 "Aoede".
+   *  연결 시점에 확정되므로 변경 시 세션을 재연결해야 반영된다(임시 목소리 테스트 드롭다운용). */
+  voiceName?: string;
 }
 
 // ── PCM 인코딩/디코딩 ────────────────────────────────────────
@@ -82,6 +85,10 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // STT 모드 ref — startSession 클로저에서 최신값 참조
   const sttModeRef = useRef<"gemini" | "gcp">(options?.sttMode ?? "gemini");
   sttModeRef.current = options?.sttMode ?? "gemini";
+
+  // Live 음성 ref — startSession 클로저(연결 시점)에서 최신값 참조
+  const voiceNameRef = useRef<string>(options?.voiceName ?? "Aoede");
+  voiceNameRef.current = options?.voiceName ?? "Aoede";
 
   // GCP STT용 child 턴 오디오 버퍼 (PCM16 raw bytes 청크) — 매 턴 flush 후 리셋
   const childAudioChunksRef = useRef<Uint8Array[]>([]);
@@ -305,12 +312,17 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       let pendingChildText = "";
 
       // camelCase config — SDK가 직렬화, v1alpha에서 transcription 활성화
-      // responseModalities는 AUDIO만 (TEXT 추가 시 1007로 끊김)
+      // responseModalities는 AUDIO만 (TEXT 추가 시 native-audio 모델에서 에러 1011/1007로 끊김)
+      // speechConfig.voiceName: Live 기본 음성 — 확정 아님, options.voiceName으로 외부 주입 가능(기본 "Aoede")
       const liveConfig = {
         responseModalities: [Modality.AUDIO],
         inputAudioTranscription: {},
         outputAudioTranscription: {},
+        speechConfig: {
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceNameRef.current } },
+        },
       };
+      console.log("[K] 🔊 Live voiceName:", voiceNameRef.current);
 
       const session = await ai.live.connect({
         model,
@@ -457,7 +469,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       processor.connect(inputCtx.destination);
 
     } catch (err) {
-      console.error("[K] 🚨 startSession error:", err);
+      console.error("[K] 🚨 startSession error (voiceName:", voiceNameRef.current, "):", err);
       setError((err as Error).message);
       updateStatus("error");
       teardown();
