@@ -88,6 +88,15 @@ body {
   }
 }
 
+/* ── 콘텐츠 등장 페이드인 (스켈레톤 → 실제 화면 하드컷 방지) ── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out;
+}
+
 /* ── 케이 타이핑 점 애니메이션 ── */
 @keyframes kDot {
   0%, 60%, 100% {

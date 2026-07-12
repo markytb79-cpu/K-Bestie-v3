@@ -50,10 +50,15 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
   const { id } = use(params);
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
+  // 조회가 빠르게 끝나면(체감상 순식간) 스켈레톤을 아예 건너뛴다 — 이 지연 이후에도
+  // 여전히 로딩 중일 때만 스켈레톤을 보여줘서, 빠른 경우엔 하드컷 없이 바로 콘텐츠가 뜬다.
+  const [showSkeleton, setShowSkeleton] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(1);
 
   useEffect(() => {
+    const skeletonTimer = setTimeout(() => setShowSkeleton(true), 150);
+
     fetch(`/api/parent/reports/${id}`)
       .then((r) => r.json())
       .then((d) => {
@@ -61,12 +66,21 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
         else setReport(d.report);
       })
       .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        clearTimeout(skeletonTimer);
+        setLoading(false);
+      });
 
     fetch(`/api/parent/reports/${id}/viewed`, { method: "POST" }).catch(() => {});
+
+    return () => clearTimeout(skeletonTimer);
   }, [id]);
 
   if (loading) {
+    if (!showSkeleton) {
+      // 150ms 안에 끝날 수도 있으니 그 사이엔 빈 배경만(스켈레톤 깜빡임 방지)
+      return <DemoFrame><div className="h-full" style={{ background: "#f3f4f6" }} /></DemoFrame>;
+    }
     return (
       <DemoFrame>
         <ReportDetailSkeleton />
@@ -216,7 +230,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
 
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
+      <div className="h-full flex flex-col overflow-hidden animate-fade-in" style={{ background: "#f3f4f6" }}>
         <ParentHeader />
 
         <div
