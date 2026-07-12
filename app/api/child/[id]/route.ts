@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { LIVE_VOICE_NAMES } from "@/lib/plan/liveVoices";
 
 export const runtime = "nodejs";
 
@@ -15,7 +16,7 @@ export async function GET(
   try {
     const { data, error } = await supabase
       .from("child_profiles")
-      .select("id, name, grade, interests")
+      .select("id, name, grade, interests, tier, live_voice_name")
       .eq("id", id)
       .single();
 
@@ -37,7 +38,7 @@ export async function PATCH(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { name?: string; grade?: string; interests?: string[] };
+  let body: { name?: string; grade?: string; interests?: string[]; liveVoiceName?: string };
   try {
     body = await req.json();
   } catch {
@@ -48,6 +49,12 @@ export async function PATCH(
   if (body.name?.trim()) updateData.name = body.name.trim();
   if (body.grade) updateData.grade = body.grade;
   if (Array.isArray(body.interests)) updateData.interests = body.interests;
+  if (body.liveVoiceName) {
+    if (!LIVE_VOICE_NAMES.includes(body.liveVoiceName)) {
+      return NextResponse.json({ error: "지원하지 않는 목소리입니다" }, { status: 400 });
+    }
+    updateData.live_voice_name = body.liveVoiceName;
+  }
 
   if (Object.keys(updateData).length === 0) {
     return NextResponse.json({ error: "수정할 항목 없음" }, { status: 400 });

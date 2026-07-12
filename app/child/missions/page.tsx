@@ -24,41 +24,6 @@ type QuestionState = "pending" | "answered" | "skipped" | "refused";
 
 const REQUIRED_COUNT = 5;
 
-// 🔧 임시 테스트용 — Live API(Gemini 3.1 flash live preview) 지원 보이스 전체 목록.
-// TODO: Live 목소리 확정 후 이 테스트 드롭다운(및 이 목록) 제거.
-const LIVE_TEST_VOICES: { name: string; label?: string }[] = [
-  { name: "Zephyr", label: "Bright" },
-  { name: "Puck", label: "Upbeat" },
-  { name: "Charon", label: "Informative" },
-  { name: "Kore", label: "Firm" },
-  { name: "Fenrir", label: "Excitable" },
-  { name: "Leda", label: "Youthful" },
-  { name: "Orus", label: "Firm" },
-  { name: "Aoede", label: "Breezy" },
-  { name: "Callirrhoe", label: "Easy-going" },
-  { name: "Autonoe", label: "Bright" },
-  { name: "Enceladus", label: "Breathy" },
-  { name: "Iapetus", label: "Clear" },
-  { name: "Umbriel", label: "Easy-going" },
-  { name: "Algieba", label: "Smooth" },
-  { name: "Despina", label: "Smooth" },
-  { name: "Erinome", label: "Clear" },
-  { name: "Algenib", label: "Gravelly" },
-  { name: "Rasalgethi", label: "Informative" },
-  { name: "Laomedeia", label: "Upbeat" },
-  { name: "Achernar", label: "Soft" },
-  { name: "Alnilam", label: "Firm" },
-  { name: "Schedar", label: "Even" },
-  { name: "Gacrux", label: "Mature" },
-  { name: "Pulcherrima", label: "Forward" },
-  { name: "Achird", label: "Friendly" },
-  { name: "Zubenelgenubi", label: "Casual" },
-  { name: "Vindemiatrix", label: "Gentle" },
-  { name: "Sadachbia", label: "Lively" },
-  { name: "Sadaltager", label: "Knowledgeable" },
-  { name: "Sulafat", label: "Warm" },
-];
-
 // ⚠️⚠️⚠️ 임시 테스트용 우회 (TEMP TEST BYPASS) ⚠️⚠️⚠️
 // 운영시간 게이트를 항상 통과시켜 시간과 무관하게 미션 테스트 가능하게 함.
 // 되돌리려면(=원래 운영시간 제한 복원) 아래 값을 false로 바꾸면 됨.
@@ -93,12 +58,9 @@ function MissionInner() {
   const [textInput, setTextInput] = useState("");
   // 요금제(tier)별 음성 방식 — /api/mission/start 응답으로 확정됨. 확정 전까지 null(로딩).
   const [voiceMode, setVoiceMode] = useState<VoiceMode | null>(null);
-  // 🔧 임시 테스트용 — Tier3(Live) 전용 목소리 선택. TODO: Live 목소리 확정 후 제거.
-  const [testVoiceName, setTestVoiceName] = useState<string>("Aoede");
-  // 🔧 임시 테스트용 — Live는 목소리를 먼저 고르고 "시작" 버튼을 눌러야 세션이 연결되게 함
-  // (불필요한 Live API 연결/비용 방지). stt_tts(Tier1/2)는 이 게이트와 무관하게 기존처럼 자동 시작.
-  // TODO: Live 목소리 확정 후 이 게이트와 관련 UI 제거(자동 시작으로 복원).
-  const [liveReadyToStart, setLiveReadyToStart] = useState(false);
+  // Tier3(Live) 전용 — 설정 메뉴에서 아이가 미리 골라둔 케이 목소리(child_profiles.live_voice_name).
+  // /api/mission/start 응답으로 확정됨.
+  const [liveVoiceName, setLiveVoiceName] = useState<string>("Achernar");
 
   const sessionIdRef = useRef<string | null>(null);
   const questionsRef = useRef<MissionQuestion[]>([]);
@@ -111,9 +73,6 @@ function MissionInner() {
   // (handleTurnComplete는 훅 생성 전에 정의되어야 하므로 직접 참조 불가)
   const askQuestionRef = useRef<((idx: number, customText?: string) => void) | undefined>(undefined);
   const getTranscriptRef = useRef<(() => Turn[]) | undefined>(undefined);
-  // 🔧 임시 테스트용 — handleTurnComplete(useCallback, deps 고정)에서 최신 isLiveMode를
-  // 참조하기 위한 ref. TODO: Live 목소리 확정 후 이 ref와 관련 예외 분기 제거.
-  const isLiveModeRef = useRef(false);
 
   const saveMessage = useCallback((role: "child" | "k", content: string) => {
     const sid = sessionIdRef.current;
@@ -158,18 +117,12 @@ function MissionInner() {
         if (!res.ok) return;
         const data = await res.json();
         questionStatesRef.current = data.questionStates ?? questionStatesRef.current;
+        setGauge(data.validAnswerCount ?? 0);
 
-        // 🔧 임시 테스트용 — Live 목소리 테스트 중엔 진행도(%) 증가와 미션 완료 처리를 멈춰서,
-        // 목소리를 끝까지 들어보기 전에 미션이 끝나버리지 않게 함.
-        // TODO: Live 목소리 확정 후 이 예외(if/else 전체) 제거하고 항상 정상 처리되게 되돌릴 것.
-        if (!isLiveModeRef.current) {
-          setGauge(data.validAnswerCount ?? 0);
-
-          if (data.completed) {
-            completedRef.current = true;
-            setCompleted(true);
-            return;
-          }
+        if (data.completed) {
+          completedRef.current = true;
+          setCompleted(true);
+          return;
         }
 
         const next = pickNextIndex(questionStatesRef.current);
@@ -212,10 +165,9 @@ function MissionInner() {
   // - stt_tts (Tier1/2): GCP STT(주기호출) + Wavenet-A TTS
   // - live (Tier3): Gemini Live API 네이티브 오디오(gemini-3.1-flash-live-preview)
   const sttTts = useVoiceChat({ onTurnComplete: handleTurnComplete });
-  const live = useGeminiLive({ onTurnComplete: handleTurnComplete, voiceName: testVoiceName });
+  const live = useGeminiLive({ onTurnComplete: handleTurnComplete, voiceName: liveVoiceName });
 
   const isLiveMode = voiceMode === "live";
-  isLiveModeRef.current = isLiveMode;
 
   const voice = isLiveMode
     ? {
@@ -253,19 +205,6 @@ function MissionInner() {
     }
   }, [isLiveMode, live, sttTts]);
   askQuestionRef.current = askQuestion;
-
-  // 🔧 임시 테스트용 — Live 목소리 변경 시 즉시 반영을 위해 세션 재연결.
-  // Live API는 연결 시점(speechConfig)에 보이스가 확정되므로 변경만으로는 반영되지 않는다.
-  // TODO: Live 목소리 확정 후 이 핸들러 및 관련 UI 제거.
-  const handleTestVoiceChange = useCallback((name: string) => {
-    setTestVoiceName(name);
-    if (!isLiveMode) return;
-    live.stopSession();
-    // stopSession()의 teardown이 동기적으로 끝나므로 다음 tick에 재연결(voiceNameRef는 이미 최신값 반영됨)
-    setTimeout(() => {
-      live.startSession({ preserveHistory: true });
-    }, 0);
-  }, [isLiveMode, live]);
 
   const switchToText = useCallback(() => {
     setMode("text");
@@ -337,6 +276,9 @@ function MissionInner() {
         for (const q of qs) initStates[q.id] = "pending";
         questionStatesRef.current = initStates;
         setVoiceMode((data.voiceMode as VoiceMode) ?? "stt_tts");
+        if (typeof data.liveVoiceName === "string" && data.liveVoiceName) {
+          setLiveVoiceName(data.liveVoiceName);
+        }
         setPhase("ready");
       } catch (e) {
         if (cancelled) return;
@@ -348,13 +290,11 @@ function MissionInner() {
   }, [searchParams, router]);
 
   useEffect(() => {
-    if (phase !== "ready" || !voiceMode || voice.status !== "idle") return;
-    // 🔧 임시 테스트용 — Live는 목소리를 고르고 "시작" 버튼을 누르기 전엔 연결하지 않는다
-    // (불필요한 Live API 연결/비용 방지). TODO: Live 목소리 확정 후 이 조건 제거.
-    if (voiceMode === "live" && !liveReadyToStart) return;
-    voice.startSession();
+    if (phase === "ready" && voiceMode && voice.status === "idle") {
+      voice.startSession();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, voiceMode, voice.status, liveReadyToStart]);
+  }, [phase, voiceMode, voice.status]);
 
   // 세션 시작 후 최초 1회만 첫 질문을 묻는다. 이후 질문은 handleTurnComplete에서
   // 답변 처리 완료 시점에 askQuestionRef를 통해 직접 트리거된다(ref 변화는 effect를
@@ -421,36 +361,6 @@ function MissionInner() {
     );
   }
 
-  // 🔧 임시 테스트용 — Live는 목소리를 먼저 고르고 "시작"을 눌러야 세션이 연결됨.
-  // TODO: Live 목소리 확정 후 이 화면과 게이트 전체 제거(자동 시작으로 복원).
-  if (isLiveMode && !liveReadyToStart) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "#fafaf8" }}>
-        <p className="text-5xl">🔊</p>
-        <p className="text-base font-bold text-gray-800">케이 목소리를 먼저 골라보세요</p>
-        <p className="text-xs text-gray-500">🔧 Live 목소리 테스트(임시)</p>
-        <select
-          value={testVoiceName}
-          onChange={(e) => setTestVoiceName(e.target.value)}
-          className="text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white cursor-pointer"
-        >
-          {LIVE_TEST_VOICES.map((v) => (
-            <option key={v.name} value={v.name}>
-              {v.name}{v.label ? ` (${v.label})` : ""}
-            </option>
-          ))}
-        </select>
-        <button
-          onClick={() => setLiveReadyToStart(true)}
-          className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
-          style={{ background: "#1a6b5a" }}
-        >
-          이 목소리로 시작하기
-        </button>
-      </div>
-    );
-  }
-
   const isConnecting = voice.status === "connecting";
   const isLive = voice.status === "live";
   const isDone = completed || gauge >= REQUIRED_COUNT;
@@ -496,27 +406,6 @@ function MissionInner() {
             </div>
           </div>
         </div>
-
-        {/* 🔧 임시 테스트용 — Tier3(Live) 화면에서만 노출. TODO: Live 목소리 확정 후 제거. */}
-        {isLiveMode && (
-          <div className="px-6 pb-2 flex items-center justify-center gap-2">
-            <label className="text-[11px] text-gray-400" htmlFor="live-test-voice">
-              🔧 Live 목소리 테스트(임시)
-            </label>
-            <select
-              id="live-test-voice"
-              value={testVoiceName}
-              onChange={(e) => handleTestVoiceChange(e.target.value)}
-              className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 bg-white cursor-pointer"
-            >
-              {LIVE_TEST_VOICES.map((v) => (
-                <option key={v.name} value={v.name}>
-                  {v.name}{v.label ? ` (${v.label})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
 
         <div className="flex justify-center mb-4">
           <Image
