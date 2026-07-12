@@ -73,6 +73,10 @@ function MissionInner() {
   // (handleTurnComplete는 훅 생성 전에 정의되어야 하므로 직접 참조 불가)
   const askQuestionRef = useRef<((idx: number, customText?: string) => void) | undefined>(undefined);
   const getTranscriptRef = useRef<(() => Turn[]) | undefined>(undefined);
+  // 스크롤백용 — DB(chat_messages)에서 불러온 과거 대화. 세션이 live가 된 직후 1회만
+  // transcript에 채워넣는다(그 전에 넣으면 startSession()이 비워버림).
+  const pastMessagesRef = useRef<Turn[]>([]);
+  const pastMessagesSeededRef = useRef(false);
 
   const saveMessage = useCallback((role: "child" | "k", content: string) => {
     const sid = sessionIdRef.current;
@@ -95,6 +99,18 @@ function MissionInner() {
     }
     return -1;
   }, []);
+
+  // 세션 이어하기 시 "지금 답해야 할 질문"의 인덱스를 처음부터 찾는다(pickNextIndex는
+  // currentIndexRef 이후만 훑으므로 재개 시점엔 맞지 않음).
+  function findResumeIndex(qs: MissionQuestion[], states: Record<string, QuestionState>): number {
+    for (let i = 0; i < qs.length; i++) {
+      if ((states[qs[i].id] ?? "pending") === "pending") return i;
+    }
+    for (let i = 0; i < qs.length; i++) {
+      if ((states[qs[i].id] ?? "pending") === "skipped") return i;
+    }
+    return 0;
+  }
 
   const handleTurnComplete = useCallback((turn: Turn) => {
     saveMessage(turn.role, turn.text);
@@ -179,6 +195,7 @@ function MissionInner() {
         setMicEnabled: live.setMicEnabled,
         sendTypedText: live.sendText,
         getTranscript: live.getTranscript,
+        seedTranscript: live.seedTranscript,
       }
     : {
         status: sttTts.status as string,
@@ -187,6 +204,7 @@ function MissionInner() {
         startSession: sttTts.startSession,
         stopSession: sttTts.stopSession,
         setMicEnabled: sttTts.setMicEnabled,
+        seedTranscript: sttTts.seedTranscript,
         sendTypedText: sttTts.sendTypedText,
         getTranscript: sttTts.getTranscript,
       };
@@ -267,18 +285,45 @@ function MissionInner() {
         setSessionId(data.sessionId);
         sessionIdRef.current = data.sessionId;
         const qs: MissionQuestion[] = data.questions ?? [];
-        if (qs.length > 0) {
-          qs[0].question_text = "안녕~ 난 케이야. 넌 이름이 뭐니?";
+
+        if (data.resumed) {
+          // 이어하기 — 오프닝 인사말을 다시 덮어쓰지 않고(이미 지나간 질문일 수 있음),
+          // 서버가 갖고 있던 진행상태·게이지를 그대로 복원한다.
+          const resumedStates: Record<string, QuestionState> = data.questionStates ?? {};
+          questionStatesRef.current = resumedStates;
+          currentIndexRef.current = findResumeIndex(qs, resumedStates);
+          setGauge(data.validAnswerCount ?? 0);
+        } else {
+          if (qs.length > 0) {
+            qs[0].question_text = "안녕~ 난 케이야. 넌 이름이 뭐니?";
+          }
+          const initStates: Record<string, QuestionState> = {};
+          for (const q of qs) initStates[q.id] = "pending";
+          questionStatesRef.current = initStates;
+          currentIndexRef.current = 0;
         }
+
         setQuestions(qs);
         questionsRef.current = qs;
-        const initStates: Record<string, QuestionState> = {};
-        for (const q of qs) initStates[q.id] = "pending";
-        questionStatesRef.current = initStates;
         setVoiceMode((data.voiceMode as VoiceMode) ?? "stt_tts");
         if (typeof data.liveVoiceName === "string" && data.liveVoiceName) {
           setLiveVoiceName(data.liveVoiceName);
         }
+
+        // 스크롤백용 — 이 세션에 이미 저장된 과거 대화를 불러와 둔다(live 전환 시 채워짐).
+        try {
+          const msgRes = await fetch(`/api/chat/messages?sessionId=${data.sessionId}`);
+          if (msgRes.ok) {
+            const msgData = await msgRes.json();
+            const past: Turn[] = (msgData.messages ?? []).map(
+              (m: { role: "child" | "k"; content: string }) => ({ role: m.role, text: m.content })
+            );
+            pastMessagesRef.current = past;
+          }
+        } catch {
+          // 과거 대화 로드 실패해도 미션 진행 자체는 막지 않음
+        }
+
         setPhase("ready");
       } catch (e) {
         if (cancelled) return;
@@ -295,6 +340,18 @@ function MissionInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, voiceMode, voice.status]);
+
+  // 과거 대화(chat_messages) 스크롤백 채워넣기 — 세션이 live가 된 직후 1회만 실행.
+  // startSession()이 자체적으로 transcript를 비우므로 그 이전에 넣으면 소용없다.
+  useEffect(() => {
+    if (voice.status === "live" && !pastMessagesSeededRef.current) {
+      pastMessagesSeededRef.current = true;
+      if (pastMessagesRef.current.length > 0) {
+        voice.seedTranscript(pastMessagesRef.current);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.status]);
 
   // 세션 시작 후 최초 1회만 첫 질문을 묻는다. 이후 질문은 handleTurnComplete에서
   // 답변 처리 완료 시점에 askQuestionRef를 통해 직접 트리거된다(ref 변화는 effect를

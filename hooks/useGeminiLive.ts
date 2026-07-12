@@ -372,13 +372,16 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
       // camelCase config — SDK가 직렬화, v1alpha에서 transcription 활성화
       // responseModalities는 AUDIO만 (TEXT 추가 시 native-audio 모델에서 에러 1011/1007로 끊김)
-      // speechConfig.voiceName: Live 기본 음성 — 확정 아님, options.voiceName으로 외부 주입 가능(기본 "Aoede")
+      // speechConfig.voiceName: 설정 메뉴에서 아이가 고른 목소리(child_profiles.live_voice_name)
+      // speechConfig.languageCode: 한국어 고정 — 이게 없으면 모델이 발화 언어를 자동판별하다가
+      // 일본어/중국어 등으로 잘못 인식하는 경우가 있어 명시적으로 고정한다.
       const liveConfig = {
         responseModalities: [Modality.AUDIO],
         inputAudioTranscription: {},
         outputAudioTranscription: {},
         speechConfig: {
           voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceNameRef.current } },
+          languageCode: "ko-KR",
         },
       };
       console.log("[K] 🔊 Live voiceName:", voiceNameRef.current);
@@ -581,6 +584,14 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
   const getTranscript = useCallback(() => transcriptRef.current, []);
 
+  /** DB에서 불러온 과거 대화(chat_messages)를 초기 자막으로 채워넣는다 — 스크롤을 올리면
+   *  이전 대화를 볼 수 있게 하기 위함. 세션 연결 이후(status가 "live"가 된 뒤) 1회 호출할 것
+   *  — startSession()이 자체적으로 transcript를 비우므로 그보다 먼저 호출하면 덮어써진다. */
+  const seedTranscript = useCallback((turns: Turn[]) => {
+    transcriptRef.current = turns;
+    setTranscript([...turns]);
+  }, []);
+
   const reset = useCallback(() => {
     teardown();
     transcriptRef.current = [];
@@ -638,6 +649,6 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   return {
     status, error, transcript, interimChildText,
     startSession, stopSession, pauseSession, getTranscript, reset,
-    sendText, speakAsK, setAudioMuted, setMicEnabled, appendTurn,
+    sendText, speakAsK, setAudioMuted, setMicEnabled, appendTurn, seedTranscript,
   };
 }

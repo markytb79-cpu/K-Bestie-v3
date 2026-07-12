@@ -226,6 +226,14 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
   const getTranscript = useCallback(() => transcriptRef.current, []);
 
+  /** DB에서 불러온 과거 대화(chat_messages)를 초기 자막으로 채워넣는다 — 스크롤을 올리면
+   *  이전 대화를 볼 수 있게 하기 위함. 세션 연결 이후(status가 "live"가 된 뒤) 1회 호출할 것
+   *  — startSession()이 자체적으로 transcript를 비우므로 그보다 먼저 호출하면 덮어써진다. */
+  const seedTranscript = useCallback((turns: Turn[]) => {
+    transcriptRef.current = turns;
+    setTranscript([...turns]);
+  }, []);
+
   const setMicEnabled = useCallback((enabled: boolean) => {
     micEnabledRef.current = enabled;
   }, []);
@@ -357,7 +365,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
   return {
     status, error, transcript, interimChildText, isSpeaking,
-    startSession, stopSession, reset, getTranscript,
+    startSession, stopSession, reset, getTranscript, seedTranscript,
     speak, respondText, sendTypedText, sayText, setMicEnabled,
   };
 }

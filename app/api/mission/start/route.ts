@@ -27,7 +27,60 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid roundType" }, { status: 400 });
   }
 
+  const REQUIRED_COUNT = 5; // mission/answer의 완료 기준과 일치
+
   const service = createServiceClient();
+
+  // 요금제(tier)별 음성 방식 — 미션 로직(정답판정/게이지/황금열쇠/라운드)과 무관한 부가 정보
+  const { tier, voiceMode, liveVoiceName } = await getVoiceModeForChild(childId);
+
+  // ── 이어하기: 아직 끝나지 않은(ended_at IS NULL) 같은 라운드의 미션 세션이 있으면
+  // 새로 만들지 않고 그대로 이어서 반환한다. 예전엔 새로고침/재접속만 해도 무조건 새
+  // 세션+진행상태를 만들어버려서 이전 대화·진행도가 통째로 사라졌음(중복 세션 문제).
+  const { data: existingSession } = await service
+    .from("chat_sessions")
+    .select("id")
+    .eq("child_id", childId)
+    .eq("session_type", "mission")
+    .is("ended_at", null)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingSession) {
+    const { data: existingProgress } = await service
+      .from("mission_progress")
+      .select("session_id, valid_answer_count, question_ids, question_states, round_type")
+      .eq("session_id", existingSession.id)
+      .eq("round_type", roundType)
+      .maybeSingle();
+
+    if (existingProgress && (existingProgress.valid_answer_count ?? 0) < REQUIRED_COUNT) {
+      const existingIds: string[] = existingProgress.question_ids ?? [];
+      const { data: existingQuestions } = await service
+        .from("mission_questions")
+        .select("id, question_text, dashboard_area_tag, cycle_type, round_type")
+        .in("id", existingIds);
+
+      const orderedExisting = existingIds
+        .map((qid) => (existingQuestions ?? []).find((q) => q.id === qid))
+        .filter(Boolean);
+
+      return NextResponse.json({
+        resumed: true,
+        sessionId: existingSession.id,
+        roundType,
+        requiredCount: REQUIRED_COUNT,
+        questionIds: existingIds,
+        questions: orderedExisting,
+        questionStates: existingProgress.question_states ?? {},
+        validAnswerCount: existingProgress.valid_answer_count ?? 0,
+        tier,
+        voiceMode,
+        liveVoiceName,
+      });
+    }
+  }
 
   // 아이 학년 조회
   const { data: child, error: childErr } = await service
@@ -96,13 +149,11 @@ export async function POST(req: NextRequest) {
     .map((qid) => (questions ?? []).find((q) => q.id === qid))
     .filter(Boolean);
 
-  // 요금제(tier)별 음성 방식 — 미션 로직(정답판정/게이지/황금열쇠/라운드)과 무관한 부가 정보
-  const { tier, voiceMode, liveVoiceName } = await getVoiceModeForChild(childId);
-
   return NextResponse.json({
+    resumed: false,
     sessionId: session.id,
     roundType,
-    requiredCount: 5,
+    requiredCount: REQUIRED_COUNT,
     questionIds,
     questions: ordered,
     tier,
