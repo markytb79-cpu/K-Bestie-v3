@@ -9,10 +9,14 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // joined_at 오름차순 — syncChildrenFromDB()가 families[0]을 "활성 가족"으로 선택하므로,
+  // 온보딩 반복 버그 등으로 이후에 빈 중복 가족이 생겨도 항상 가장 먼저 가입한(진짜) 가족이
+  // 선택되도록 순서를 고정한다.
   const { data, error } = await supabase
     .from("family_members")
     .select("family_id, role, joined_at, families(id, name, created_at)")
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .order("joined_at", { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ families: data ?? [] });

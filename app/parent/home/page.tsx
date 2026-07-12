@@ -44,6 +44,9 @@ export default function ParentHomePage() {
   const children = store.children;
 
   const [mounted, setMounted] = useState(false);
+  // 로그인 직후 로컬 캐시(activeFamilyId)가 DB 상태와 동기화되기 전까지 온보딩 화면이
+  // 먼저 그려지는 것을 막기 위한 게이트. syncChildrenFromDB()가 끝나야 false가 된다.
+  const [syncingFamily, setSyncingFamily] = useState(true);
   const [parentName, setParentName] = useState<string>("보호자");
   const [activeIdx, setActiveIdx] = useState(0);
   const [latestReport, setLatestReport] = useState<Report | null>(null);
@@ -145,6 +148,18 @@ export default function ParentHomePage() {
         }
       })
       .catch(() => {});
+
+    // 로그인(OAuth 콜백/구성원 로그인) 직후 어디서도 로컬 캐시를 DB와 동기화하지 않아서,
+    // 이미 가족이 있는 부모도 activeFamilyId가 비어있는 채로 온보딩(가족 만들기/참여하기)
+    // 화면을 매번 다시 보게 되던 버그 수정 — 마운트 시 항상 먼저 동기화한다.
+    (async () => {
+      try {
+        const { syncChildrenFromDB } = await import("@/lib/store");
+        await syncChildrenFromDB();
+      } finally {
+        setSyncingFamily(false);
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -221,7 +236,7 @@ export default function ParentHomePage() {
       .finally(() => setReportLoading(false));
   }, [activeChild?.id]);
 
-  if (!mounted) {
+  if (!mounted || syncingFamily) {
     return (
       <DemoFrame>
         <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
