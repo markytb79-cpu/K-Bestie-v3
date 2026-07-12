@@ -72,6 +72,7 @@ export default function ParentSettingsPage() {
   const [editGrade, setEditGrade] = useState("");
   const [editInterests, setEditInterests] = useState<string[]>([]);
   const [editTier, setEditTier] = useState<number>(1);
+  const [editOriginalTier, setEditOriginalTier] = useState<number>(1);
   const [savingTier, setSavingTier] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -530,128 +531,26 @@ export default function ParentSettingsPage() {
                     <p className="text-[10px] font-bold text-gray-500">자녀 프로필 수정</p>
                     <div className="flex flex-col gap-2">
                       {familyMembers.filter(m => m.role === "child").map((m) => (
-                        <div key={m.memberId} className="bg-white border border-gray-100 rounded-xl p-2.5 flex flex-col gap-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-gray-800">🧒 {m.displayName} ({m.grade})</span>
-                            <button
-                              onClick={() => {
-                                setEditChild({
-                                  id: m.childId,
-                                  name: m.displayName,
-                                  grade: m.grade,
-                                  interests: m.interests
-                                });
-                                setEditName(m.displayName);
-                                setEditGrade(m.grade);
-                                setEditInterests(m.interests ?? []);
-                                setEditTier(m.tier ?? 1);
-                              }}
-                              className="text-[10px] bg-[#f3f4f6] text-gray-600 font-bold px-2.5 py-1 rounded-lg cursor-pointer"
-                            >
-                              수정하기
-                            </button>
-                          </div>
-
-                          {editChild && editChild.id === m.childId && (
-                            <div className="mt-2 flex flex-col gap-3 pt-2.5 border-t border-dashed border-gray-100">
-                              <input
-                                type="text"
-                                value={editName}
-                                onChange={(e) => setEditName(e.target.value)}
-                                className="px-3 py-1.5 text-xs border border-gray-200 rounded-xl bg-gray-50/50 outline-none"
-                              />
-                              <div>
-                                <p className="text-[9px] text-gray-400 mb-1">학년</p>
-                                <div className="grid grid-cols-3 gap-1">
-                                  {GRADES.map((g) => (
-                                    <button
-                                      key={g}
-                                      onClick={() => setEditGrade(g)}
-                                      className={`py-1 text-[9px] font-bold border rounded-lg ${
-                                        editGrade === g ? "bg-[#1a6b5a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
-                                      }`}
-                                    >
-                                      {g}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              <div>
-                                <p className="text-[9px] text-gray-400 mb-1">관심사</p>
-                                <div className="flex flex-wrap gap-1">
-                                  {INTERESTS.map((interest) => {
-                                    const has = editInterests.includes(interest);
-                                    return (
-                                      <button
-                                        key={interest}
-                                        onClick={() => toggleInterest(interest, true)}
-                                        className={`px-2.5 py-0.5 text-[9px] font-bold border rounded-full ${
-                                          has ? "bg-[#e8845a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
-                                        }`}
-                                      >
-                                        {interest}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-
-                              <div>
-                                <p className="text-[9px] text-gray-400 mb-1">요금제</p>
-                                <div className="grid grid-cols-3 gap-1">
-                                  {CARE_PLANS.map((p) => (
-                                    <button
-                                      key={p.tier}
-                                      onClick={() => setEditTier(p.tier)}
-                                      className={`py-1 text-[9px] font-bold border rounded-lg ${
-                                        editTier === p.tier ? "bg-[#1a6b5a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
-                                      }`}
-                                    >
-                                      {p.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              <div className="flex gap-2 mt-1">
-                                <button
-                                  onClick={async () => {
-                                    if (!editName.trim()) return;
-                                    updateChild(editChild.id, {
-                                      name: editName.trim(),
-                                      grade: editGrade,
-                                      interests: editInterests,
-                                    });
-                                    if (editTier !== (m.tier ?? 1)) {
-                                      setSavingTier(true);
-                                      try {
-                                        await fetch(`/api/child/${editChild.id}`, {
-                                          method: "PATCH",
-                                          headers: { "Content-Type": "application/json" },
-                                          body: JSON.stringify({ tier: editTier }),
-                                        });
-                                      } catch {} finally {
-                                        setSavingTier(false);
-                                      }
-                                    }
-                                    setEditChild(null);
-                                    loadFamilyMembers();
-                                  }}
-                                  disabled={savingTier}
-                                  className="flex-1 py-1.5 bg-[#1a6b5a] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
-                                >
-                                  {savingTier ? "저장중" : "저장"}
-                                </button>
-                                <button
-                                  onClick={() => setEditChild(null)}
-                                  className="flex-1 py-1.5 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer"
-                                >
-                                  취소
-                                </button>
-                              </div>
-                            </div>
-                          )}
+                        <div key={m.memberId} className="bg-white border border-gray-100 rounded-xl p-2.5 flex items-center justify-between">
+                          <span className="text-xs font-bold text-gray-800">🧒 {m.displayName} ({m.grade})</span>
+                          <button
+                            onClick={() => {
+                              setEditChild({
+                                id: m.childId,
+                                name: m.displayName,
+                                grade: m.grade,
+                                interests: m.interests
+                              });
+                              setEditName(m.displayName);
+                              setEditGrade(m.grade);
+                              setEditInterests(m.interests ?? []);
+                              setEditTier(m.tier ?? 1);
+                              setEditOriginalTier(m.tier ?? 1);
+                            }}
+                            className="text-[10px] bg-[#f3f4f6] text-gray-600 font-bold px-2.5 py-1 rounded-lg cursor-pointer"
+                          >
+                            수정하기
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -782,6 +681,121 @@ export default function ParentSettingsPage() {
         </div>
 
         <RealParentNav active="설정" />
+
+        {/* 자녀 프로필 수정 모달 — 열려있는 동안 배경 딤 처리로 다른 아이 수정하기 오클릭 방지 */}
+        {editChild && (
+          <div
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
+            onClick={() => setEditChild(null)}
+          >
+            <div
+              className="w-full max-w-xs bg-white rounded-2xl p-4 shadow-lg flex flex-col gap-3 max-h-[85vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="text-sm font-bold text-center py-1" style={{ color: "#1e1e2d" }}>
+                자녀 프로필 수정
+              </p>
+
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50/50 outline-none"
+              />
+
+              <div>
+                <p className="text-[9px] text-gray-400 mb-1">학년</p>
+                <div className="grid grid-cols-3 gap-1">
+                  {GRADES.map((g) => (
+                    <button
+                      key={g}
+                      onClick={() => setEditGrade(g)}
+                      className={`py-1.5 text-[9px] font-bold border rounded-lg cursor-pointer ${
+                        editGrade === g ? "bg-[#1a6b5a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[9px] text-gray-400 mb-1">관심사</p>
+                <div className="flex flex-wrap gap-1">
+                  {INTERESTS.map((interest) => {
+                    const has = editInterests.includes(interest);
+                    return (
+                      <button
+                        key={interest}
+                        onClick={() => toggleInterest(interest, true)}
+                        className={`px-2.5 py-1 text-[9px] font-bold border rounded-full cursor-pointer ${
+                          has ? "bg-[#e8845a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
+                        }`}
+                      >
+                        {interest}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[9px] text-gray-400 mb-1">요금제</p>
+                <div className="grid grid-cols-3 gap-1">
+                  {CARE_PLANS.map((p) => (
+                    <button
+                      key={p.tier}
+                      onClick={() => setEditTier(p.tier)}
+                      className={`py-1.5 text-[9px] font-bold border rounded-lg cursor-pointer ${
+                        editTier === p.tier ? "bg-[#1a6b5a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2 mt-1">
+                <button
+                  onClick={async () => {
+                    if (!editName.trim() || !editChild) return;
+                    updateChild(editChild.id, {
+                      name: editName.trim(),
+                      grade: editGrade,
+                      interests: editInterests,
+                    });
+                    if (editTier !== editOriginalTier) {
+                      setSavingTier(true);
+                      try {
+                        await fetch(`/api/child/${editChild.id}`, {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ tier: editTier }),
+                        });
+                      } catch {} finally {
+                        setSavingTier(false);
+                      }
+                    }
+                    setEditChild(null);
+                    loadFamilyMembers();
+                  }}
+                  disabled={savingTier}
+                  className="flex-1 py-2 bg-[#1a6b5a] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
+                >
+                  {savingTier ? "저장중" : "저장"}
+                </button>
+                <button
+                  onClick={() => setEditChild(null)}
+                  className="flex-1 py-2 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </DemoFrame>
   );
