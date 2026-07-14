@@ -1,0 +1,24 @@
+-- 관리자 대시보드 Phase 1: 오래된 대화 로그(chat_messages) 정기 삭제 크론 작업 — 초안/비활성
+-- 이 마이그레이션은 아무것도 실행하지 않는다 (cron.schedule 호출은 아래 주석 블록 안에만 존재).
+-- 실제 등록은 대표 승인 후, 이 주석을 해제하여 Supabase SQL Editor에서 직접 실행할 것.
+--   (본 저장소에는 conversation_logs 테이블이 없으므로, 대상은 chat_sessions/chat_messages.)
+--
+-- 목적: chat_sessions.created_at 기준 보관기간(예: 90일)이 지난 세션과 그에 속한
+--   chat_messages를 주기적으로 삭제하여 개인정보 보관 최소화 원칙을 지킨다.
+--   (실행 시점의 세부 보관기간/삭제 SQL은 대표 확정 후 이 주석 내용을 검토하여 결정)
+--
+-- ── (비활성) 매일 04:30 KST = 19:30 UTC 실행 예정 크론 등록 예시 ──────────────
+-- select cron.schedule(
+--   'kbestie-conversation-purge',
+--   '30 19 * * *',
+--   $$
+--   delete from chat_messages
+--   where session_id in (
+--     select id from chat_sessions where created_at < now() - interval '90 days'
+--   );
+--   delete from chat_sessions where created_at < now() - interval '90 days';
+--   $$
+-- );
+--
+-- ── 등록 해제(참고용) ──
+-- select cron.unschedule('kbestie-conversation-purge');

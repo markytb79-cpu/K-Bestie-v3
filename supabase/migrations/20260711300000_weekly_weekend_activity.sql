@@ -1,6 +1,6 @@
 -- 초안 (DDL DRAFT ONLY) — 실행 금지, 대표 승인 후 대표가 직접 실행할 것
 -- 목적: 주간 리포트에 "주말 활동 추천" 필드 저장
--- 관련: lib/batch/generateWeeklySummary.ts, app/api/_lib/prompts.ts (WEEKLY_SUMMARY_PROMPT_TEMPLATE)
+-- 관련: lib/batch/generateWeeklySummary.ts, app/api/_lib/prompts.ts (WEEKLY_REPORT_PROMPT_TEMPLATE)
 
 ALTER TABLE weekly_summaries
   ADD COLUMN weekend_activity_recommendation TEXT NOT NULL DEFAULT '';

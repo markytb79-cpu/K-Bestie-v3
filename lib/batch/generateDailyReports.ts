@@ -1,6 +1,5 @@
-import { GoogleGenAI } from "@google/genai";
 import { createServiceClient } from "@/lib/supabase/server";
-import { getActiveReportModel } from "@/app/api/_lib/ai";
+import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { REPORT_PROMPT_TEMPLATE } from "@/app/api/_lib/prompts";
 
 export interface DailyReportResult {
@@ -34,8 +33,8 @@ export async function generateDailyReports(targetDate: string): Promise<DailyRep
   }
   if (!sessions?.length) return result;
 
-  const reportModel = getActiveReportModel();
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMMA_API_KEY! });
+  const reportModel = await getModelForGroup("A");
+  const ai = createGenAIClient(reportModel);
 
   for (const session of sessions) {
     try {

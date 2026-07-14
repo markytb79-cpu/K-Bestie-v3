@@ -16,7 +16,7 @@
 --        create extension if not exists pg_net;
 --   4. <PROJECT_REF>는 fetvnhhjicndmxvhrffk로 치환 완료.
 --      <BATCH_SECRET>은 의도적으로 플레이스홀더 그대로 둠 — 이 파일은 git에 커밋되는 파일이라
---      평문 시크릿을 넣지 않는다. 실제 값은 .env.local의 BATCH_SECRET_FOR_CRON 항목 참고,
+--      평문 시크릿을 넣지 않는다. 실제 값은 .env.local의 BATCH_SECRET 항목 참고,
 --      SQL Editor에서 이 블록을 실행하기 직전에 <BATCH_SECRET>를 그 값으로 직접 바꿔 넣을 것.
 --   5. 크론 시각은 UTC 기준. KST = UTC+9.
 --        04:00 KST = 19:00 UTC (전날)

@@ -1,13 +1,28 @@
-import { GoogleGenAI } from "@google/genai";
 import { createServiceClient } from "@/lib/supabase/server";
-import { getActiveReportModel } from "@/app/api/_lib/ai";
-import { WEEKLY_SUMMARY_PROMPT_TEMPLATE } from "@/app/api/_lib/prompts";
+import { getModelForGroup, createGenAIClient, type GroupModelConfig } from "@/app/api/_lib/ai";
+import { WEEKLY_REPORT_PROMPT_TEMPLATE } from "@/app/api/_lib/prompts";
+import type { GoogleGenAI } from "@google/genai";
 
 export interface WeeklySummaryResult {
   created: string[];  // 생성된 weekly_summary id 목록
   skipped: string[];  // 데이터 없어서 건너뜀 (child_id)
   errors: { childId: string; error: string }[];
 }
+
+interface WeeklyReportJson {
+  summary_text: string;
+  detail_text: string;
+  detail_dashboard_cards?: Record<string, string>;
+  mood_average: number;
+  highlights: string[];
+  parent_guide: string;
+  weekend_activity_recommendation?: string;
+}
+
+// 원문 재분석 시 입력 토큰 상한 근사치(문자 수 기준) — 이보다 길면 청크로 나눠 맵-리듀스한다.
+// 한글 대화 원문 기준 대략적 근사치이며, 정밀한 토큰 카운트가 아닌 안전 마진용 상한이다.
+const MAX_TRANSCRIPT_CHARS = 60_000;
+const CHUNK_CHARS = 20_000;
 
 /** targetDate(월~일) 주의 월요일/일요일 DATE 문자열 반환 */
 function getWeekBounds(targetDate: string): { weekStart: string; weekEnd: string } {
@@ -22,12 +37,117 @@ function getWeekBounds(targetDate: string): { weekStart: string; weekEnd: string
   return { weekStart: fmt(mon), weekEnd: fmt(sun) };
 }
 
+/** 문자열을 CHUNK_CHARS 단위로 줄바꿈 경계에서 최대한 자연스럽게 분할. */
+function chunkText(text: string, chunkSize: number): string[] {
+  if (text.length <= chunkSize) return [text];
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < text.length) {
+    let end = Math.min(start + chunkSize, text.length);
+    if (end < text.length) {
+      const lastNewline = text.lastIndexOf("\n", end);
+      if (lastNewline > start) end = lastNewline;
+    }
+    chunks.push(text.slice(start, end));
+    start = end;
+  }
+  return chunks;
+}
+
+/** 청크 하나를 압축 요약(맵 단계) — 최종 리듀스 프롬프트에 들어갈 원본을 줄이기 위함. */
+async function mapChunkSummary(ai: GoogleGenAI, modelId: string, chunk: string): Promise<string> {
+  const result = await ai.models.generateContent({
+    model: modelId,
+    contents: [{
+      role: "user",
+      parts: [{
+        text: `다음은 아이와 AI 친구 케이의 대화 원문 일부입니다. 아이의 상태·관심사·감정·주말 희망사항과 관련된 내용을 놓치지 않고 5~8문장으로 압축 요약해줘(다른 설명 없이 요약문만):\n\n${chunk}`,
+      }],
+    }],
+    config: { maxOutputTokens: 512 },
+  });
+  return (result.text ?? "").trim();
+}
+
+/** 원문(또는 청크 요약 합본)을 최종 주간 리포트 JSON으로 리듀스. */
+async function reduceToWeeklyReport(
+  ai: GoogleGenAI,
+  modelId: string,
+  weekRange: string,
+  transcriptText: string,
+): Promise<WeeklyReportJson> {
+  const prompt = WEEKLY_REPORT_PROMPT_TEMPLATE
+    .replace("{{WEEK_RANGE}}", weekRange)
+    .replace("{{TRANSCRIPT}}", transcriptText);
+
+  const result = await ai.models.generateContent({
+    model: modelId,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    config: { responseMimeType: "application/json", maxOutputTokens: 2048 },
+  });
+
+  const text = (result.text ?? "").trim();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`주간 리포트 JSON 파싱 실패: ${text.slice(0, 100)}`);
+  }
+}
+
+/** 원문 재분석 — 토큰 상한 초과 시 청크 맵-리듀스로 압축한 뒤 리듀스한다. */
+async function analyzeWeekTranscript(
+  ai: GoogleGenAI,
+  modelId: string,
+  weekRange: string,
+  transcriptText: string,
+): Promise<WeeklyReportJson> {
+  if (transcriptText.length <= MAX_TRANSCRIPT_CHARS) {
+    return reduceToWeeklyReport(ai, modelId, weekRange, transcriptText);
+  }
+
+  console.warn(`[generateWeeklySummary] 원문(${transcriptText.length}자)이 상한(${MAX_TRANSCRIPT_CHARS}자)을 초과 — 청크 맵-리듀스로 압축`);
+  const chunks = chunkText(transcriptText, CHUNK_CHARS);
+  const chunkSummaries: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    chunkSummaries.push(await mapChunkSummary(ai, modelId, chunks[i]));
+  }
+  const reducedTranscript = chunkSummaries.map((s, i) => `[구간 ${i + 1} 요약]\n${s}`).join("\n\n");
+  return reduceToWeeklyReport(ai, modelId, weekRange, reducedTranscript);
+}
+
+/** 최후 폴백 — 원문 재분석이 청크 맵-리듀스 후에도 실패하면 기존 daily_reports 요약
+ *  이어붙이기 방식으로라도 주간 리포트를 생성한다(완전 실패보다 낫다는 판단, 로그로 명시). */
+async function fallbackFromDailyReports(
+  db: ReturnType<typeof createServiceClient>,
+  ai: GoogleGenAI,
+  modelId: string,
+  childId: string,
+  weekStart: string,
+  weekEnd: string,
+  weekRange: string,
+): Promise<WeeklyReportJson> {
+  console.error(`[generateWeeklySummary] 원문 재분석 실패 — child ${childId}는 daily_reports 요약 이어붙이기로 폴백`);
+  const { data: reports } = await db
+    .from("daily_reports")
+    .select("summary_line, mood_score, emotion_tags, chat_sessions!inner(child_id)")
+    .eq("chat_sessions.child_id", childId)
+    .gte("created_at", `${weekStart}T00:00:00Z`)
+    .lte("created_at", `${weekEnd}T23:59:59Z`);
+
+  const dailySummaries = (reports ?? [])
+    .map((r: { summary_line: string; mood_score: number; emotion_tags: string[] }, i: number) =>
+      `Day ${i + 1}: ${r.summary_line} (기분 ${r.mood_score}/10, 태그: ${r.emotion_tags.join(", ")})`)
+    .join("\n");
+
+  return reduceToWeeklyReport(ai, modelId, weekRange, dailySummaries || "이번 주 기록된 대화가 없습니다.");
+}
+
 /**
- * Step 3: 주간 요약 생성
+ * Step 3: 주간 리포트 생성 — 그 주 대화 원문 전체를 재분석해 요약+상세를 함께 생성한다
+ * (daily_reports 이어붙이기 금지). 토큰 상한 초과 시 청크 맵-리듀스, 그래도 실패하면
+ * daily_reports 요약 이어붙이기로 자동 강등(로그 남김).
  *
  * targetDate가 토요일이거나 forceWeekly=true 일 때 실행.
- * 해당 주(월~일) 동안 생성된 daily_reports를 child_id별로 묶어
- * weekly_summaries에 삽입한다.
  *
  * @param targetDate  "YYYY-MM-DD"
  * @param forceWeekly 요일 무관 강제 실행
@@ -43,91 +163,62 @@ export async function generateWeeklySummary(
   if (!forceWeekly && dow !== 6) return result;
 
   const { weekStart, weekEnd } = getWeekBounds(targetDate);
-
   const db = createServiceClient();
 
-  // 해당 주에 생성된 daily_reports + child_id (chat_sessions 조인)
-  const { data: reports, error: fetchErr } = await db
-    .from("daily_reports")
-    .select(`
-      id,
-      summary_line,
-      mood_score,
-      emotion_tags,
-      parent_guide,
-      chat_sessions!inner ( child_id )
-    `)
-    .gte("created_at", `${weekStart}T00:00:00Z`)
-    .lte("created_at", `${weekEnd}T23:59:59Z`);
+  // 해당 주에 세션이 있었던 아이 목록(daily_reports가 있는 child만 — 대화가 없으면 스킵)
+  const { data: sessionsWithChild, error: fetchErr } = await db
+    .from("chat_sessions")
+    .select("id, child_id")
+    .gte("started_at", `${weekStart}T00:00:00Z`)
+    .lte("started_at", `${weekEnd}T23:59:59Z`);
 
   if (fetchErr) {
-    throw new Error(`generateWeeklySummary: 리포트 조회 실패 — ${fetchErr.message}`);
+    throw new Error(`generateWeeklySummary: 세션 조회 실패 — ${fetchErr.message}`);
   }
-  if (!reports?.length) return result;
+  if (!sessionsWithChild?.length) return result;
 
-  // child_id별로 그룹핑
-  type ReportRow = {
-    id: string;
-    summary_line: string;
-    mood_score: number;
-    emotion_tags: string[];
-    parent_guide: string;
-    chat_sessions: { child_id: string } | { child_id: string }[];
-  };
-
-  const byChild = new Map<string, ReportRow[]>();
-  for (const r of reports as ReportRow[]) {
-    const sess = Array.isArray(r.chat_sessions) ? r.chat_sessions[0] : r.chat_sessions;
-    const childId = sess?.child_id;
-    if (!childId) continue;
-    if (!byChild.has(childId)) byChild.set(childId, []);
-    byChild.get(childId)!.push(r);
+  const sessionsByChild = new Map<string, string[]>();
+  for (const s of sessionsWithChild as { id: string; child_id: string }[]) {
+    if (!sessionsByChild.has(s.child_id)) sessionsByChild.set(s.child_id, []);
+    sessionsByChild.get(s.child_id)!.push(s.id);
   }
 
-  const reportModel = getActiveReportModel();
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMMA_API_KEY! });
+  const reportModel: GroupModelConfig = await getModelForGroup("A");
+  const ai = createGenAIClient(reportModel);
   const weekRange = `${weekStart} ~ ${weekEnd}`;
 
-  for (const [childId, childReports] of byChild) {
+  for (const [childId, sessionIds] of sessionsByChild) {
     try {
-      if (!childReports.length) {
+      if (!sessionIds.length) {
         result.skipped.push(childId);
         continue;
       }
 
-      const dailySummaries = childReports
-        .map((r, i) => `Day ${i + 1}: ${r.summary_line} (기분 ${r.mood_score}/10, 태그: ${r.emotion_tags.join(", ")})`)
-        .join("\n");
+      const { data: messages, error: msgErr } = await db
+        .from("chat_messages")
+        .select("role, content, created_at")
+        .in("session_id", sessionIds)
+        .order("created_at", { ascending: true });
 
-      const prompt = WEEKLY_SUMMARY_PROMPT_TEMPLATE
-        .replace("{{WEEK_RANGE}}", weekRange)
-        .replace("{{DAILY_SUMMARIES}}", dailySummaries);
-
-      const genResult = await ai.models.generateContent({
-        model: reportModel.modelId,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          responseMimeType: "application/json",
-          maxOutputTokens: 1024,
-        },
-      });
-
-      let summary: {
-        summary_text: string;
-        mood_average: number;
-        highlights: string[];
-        parent_guide: string;
-        weekend_activity_recommendation?: string;
-      };
-      try {
-        summary = JSON.parse(genResult.text ?? "{}");
-      } catch {
-        throw new Error(`JSON 파싱 실패: ${genResult.text?.slice(0, 100)}`);
+      if (msgErr) throw new Error(msgErr.message);
+      if (!messages?.length) {
+        result.skipped.push(childId);
+        continue;
       }
 
-      summary.mood_average = Math.max(1, Math.min(10,
-        Math.round((summary.mood_average ?? 5) * 10) / 10
-      ));
+      const transcriptText = messages
+        .map((m: { role: string; content: string }) => `${m.role === "child" ? "아이" : "케이"}: ${m.content}`)
+        .join("\n");
+
+      let report: WeeklyReportJson;
+      try {
+        report = await analyzeWeekTranscript(ai, reportModel.modelId, weekRange, transcriptText);
+      } catch (analyzeErr) {
+        console.error(`[generateWeeklySummary] 청크 맵-리듀스도 실패:`, (analyzeErr as Error).message);
+        report = await fallbackFromDailyReports(db, ai, reportModel.modelId, childId, weekStart, weekEnd, weekRange);
+      }
+
+      const moodAverage = Math.max(1, Math.min(10, Math.round((report.mood_average ?? 5) * 10) / 10));
 
       const { data: inserted, error: insertErr } = await db
         .from("weekly_summaries")
@@ -136,11 +227,13 @@ export async function generateWeeklySummary(
             child_id: childId,
             week_start: weekStart,
             week_end: weekEnd,
-            summary_text: summary.summary_text ?? "",
-            mood_average: summary.mood_average,
-            highlights: summary.highlights ?? [],
-            parent_guide: summary.parent_guide ?? "",
-            weekend_activity_recommendation: summary.weekend_activity_recommendation ?? "",
+            summary_text: report.summary_text ?? "",
+            detail_text: report.detail_text ?? "",
+            detail_dashboard_cards: report.detail_dashboard_cards ?? {},
+            mood_average: moodAverage,
+            highlights: report.highlights ?? [],
+            parent_guide: report.parent_guide ?? "",
+            weekend_activity_recommendation: report.weekend_activity_recommendation ?? "",
           },
           { onConflict: "child_id,week_start" },
         )

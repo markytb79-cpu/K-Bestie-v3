@@ -84,6 +84,15 @@ export default function ParentReportPage() {
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
         <ParentHeader />
 
+        <div className="flex items-center gap-2 px-4 pt-3">
+          <span className="text-xs font-bold px-3 py-1.5 rounded-full text-white" style={{ background: "#1a6b5a" }}>
+            일간
+          </span>
+          <Link href="/parent/report/weekly" className="text-xs font-semibold px-3 py-1.5 rounded-full bg-white text-gray-500">
+            주간
+          </Link>
+        </div>
+
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
           <div className="flex justify-end">
             <span className="text-xs font-semibold px-2 py-0.5 bg-gray-100 rounded-full text-gray-500">

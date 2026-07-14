@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getTierForChild, isDetailAllowed } from "@/lib/plan/requireDetailAccess";
 
 export const runtime = "nodejs";
 
+// 이 라우트는 "일간 상세"(dashboard_cards/parent_guide 포함)를 반환하되, Care Start
+// 계정에는 서버측에서 상세 전용 필드를 스트리핑하고 restricted:true를 함께 내려준다
+// (요약은 그대로 볼 수 있게 하면서, API를 직접 호출해도 상세 필드는 절대 새어나가지 않음).
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -17,7 +21,7 @@ export async function GET(
   const { data: report, error } = await supabase
     .from("daily_reports")
     .select(
-      "id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, created_at, session_id, chat_sessions(started_at, turn_count, ended_at)"
+      "id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, created_at, session_id, chat_sessions(started_at, turn_count, ended_at, child_id)"
     )
     .eq("id", id)
     .single();
@@ -27,8 +31,19 @@ export async function GET(
   }
 
   const { chat_sessions, ...rest } = report as typeof report & {
-    chat_sessions: { started_at: string; turn_count: number; ended_at: string | null } | null;
+    chat_sessions: { started_at: string; turn_count: number; ended_at: string | null; child_id: string } | null;
   };
 
-  return NextResponse.json({ report: { ...rest, session: chat_sessions ?? null } });
+  let restricted = false;
+  if (chat_sessions?.child_id) {
+    const tier = await getTierForChild(chat_sessions.child_id);
+    restricted = !isDetailAllowed(tier);
+  }
+
+  const { child_id: _childId, ...sessionRest } = chat_sessions ?? { child_id: undefined };
+  const safeRest = restricted
+    ? { ...rest, parent_guide: "", dashboard_cards: {}, emotion_level: null }
+    : rest;
+
+  return NextResponse.json({ report: { ...safeRest, session: chat_sessions ? sessionRest : null }, restricted });
 }

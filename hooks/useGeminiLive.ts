@@ -31,6 +31,8 @@ export interface UseGeminiLiveOptions {
   /** Live API 음성(speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName). 기본값 "Aoede".
    *  연결 시점에 확정되므로 변경 시 세션을 재연결해야 반영된다(임시 목소리 테스트 드롭다운용). */
   voiceName?: string;
+  /** 현재 chat_sessions.id를 반환. /api/usage/live start/end 호출 및 GCP STT 사용량 계측에 사용. */
+  getSessionId?: () => string | null;
 }
 
 // ── PCM 인코딩/디코딩 ────────────────────────────────────────
@@ -111,6 +113,38 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // Live 음성 ref — startSession 클로저(연결 시점)에서 최신값 참조
   const voiceNameRef = useRef<string>(options?.voiceName ?? "Aoede");
   voiceNameRef.current = options?.voiceName ?? "Aoede";
+
+  // usage_events(live_audio) start/end 호출 및 GCP STT 계측용 세션 ID
+  const getSessionIdRef = useRef<(() => string | null) | undefined>(undefined);
+  getSessionIdRef.current = options?.getSessionId;
+  // teardown()이 여러 지점(정상 종료/에러/언마운트)에서 중복 호출돼도 end 요청은 1회만 나가도록 가드
+  const liveUsageStartedRef = useRef(false);
+  // Gemini usageMetadata의 최신(세션 누적) 토큰 카운트 — end 시점에 /api/usage/live로 전달.
+  const lastTokenInRef = useRef<number | null>(null);
+  const lastTokenOutRef = useRef<number | null>(null);
+
+  function notifyUsageLive(event: "start" | "end") {
+    const sessionId = getSessionIdRef.current?.();
+    if (!sessionId) return;
+    if (event === "start") {
+      liveUsageStartedRef.current = true;
+      lastTokenInRef.current = null;
+      lastTokenOutRef.current = null;
+    }
+    if (event === "end" && !liveUsageStartedRef.current) return;
+    if (event === "end") liveUsageStartedRef.current = false;
+    const tokenIn = lastTokenInRef.current;
+    const tokenOut = lastTokenOutRef.current;
+    fetch("/api/usage/live", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event,
+        sessionId,
+        ...(event === "end" && tokenIn != null && tokenOut != null ? { tokenIn, tokenOut } : {}),
+      }),
+    }).catch(() => {});
+  }
 
   // GCP STT용 child 턴 오디오 버퍼 (PCM16 raw bytes 청크) — 매 턴 flush 후 리셋
   const childAudioChunksRef = useRef<Uint8Array[]>([]);
@@ -220,10 +254,11 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       if (chunks.length > 0) {
         try {
           const audioBase64 = concatChunksToBase64(chunks);
+          const sessionId = getSessionIdRef.current?.() ?? null;
           const res = await fetch("/api/mission/stt", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ audioBase64 }),
+            body: JSON.stringify({ audioBase64, sessionId }),
           });
           if (res.ok) {
             const { transcript } = await res.json();
@@ -243,6 +278,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   }
 
   function teardown() {
+    notifyUsageLive("end");
     stopAllScheduledSources();
     processorRef.current?.disconnect();
     processorRef.current = null;
@@ -393,6 +429,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
           onopen: () => {
             console.log("[K] ✅ WebSocket open");
             updateStatus("live");
+            notifyUsageLive("start");
 
             // 로컬 STT 폴백 시작 — gcp 모드에서는 브라우저 폴백을 켜지 않음(초기화도 안 함)
             if (ENABLE_STT_FALLBACK && sttModeRef.current !== "gcp") {
@@ -408,6 +445,17 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
             }
           },
           onmessage: (msg: LiveServerMessage) => {
+            // usageMetadata는 serverContent의 형제 필드이며, 세션 누적치(총합)로 매번 갱신되어 온다.
+            // 세션 종료 시 usage_events 비용 계산에 쓸 수 있도록 최신값만 ref에 보관해둔다.
+            if (msg.usageMetadata) {
+              if (typeof msg.usageMetadata.promptTokenCount === "number") {
+                lastTokenInRef.current = msg.usageMetadata.promptTokenCount;
+              }
+              if (typeof msg.usageMetadata.responseTokenCount === "number") {
+                lastTokenOutRef.current = msg.usageMetadata.responseTokenCount;
+              }
+            }
+
             // ── 오디오 재생 ──────────────────────────────────────
             // 이번 턴이 강제로 끊긴 상태(kTurnCutRef)면 서버가 계속 보내는 나머지
             // 오디오는 재생하지 않고 버린다(길게 말하는 것을 실제로 막는 부분).

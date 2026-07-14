@@ -15,6 +15,14 @@ import {
   removeChild,
   type StoreChild,
 } from "@/lib/store";
+import { getEffectiveRetention, type Tier } from "@/lib/plan/retention";
+
+function formatRetentionLabel(tier: Tier): string {
+  const retention = getEffectiveRetention(tier, 0);
+  if (retention.isPermanent || retention.months == null) return "무기한";
+  const months = retention.months;
+  return months % 12 === 0 ? `${months / 12}년` : `${months}개월`;
+}
 
 const GRADES = ["1학년", "2학년", "3학년", "4학년", "5학년", "6학년"];
 const INTERESTS = ["공룡", "우주", "동물", "그림", "음악", "스포츠", "요리", "게임", "과학", "책"];
@@ -74,6 +82,8 @@ export default function ParentSettingsPage() {
   const [editOriginalTier, setEditOriginalTier] = useState<number>(1);
   const [savingTier, setSavingTier] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // 요금제 다운그레이드 확인 모달 — "확인" 전에는 어떤 스탬프도 부여하지 않는다(비가역 파기 실수 방지).
+  const [showDowngradeConfirm, setShowDowngradeConfirm] = useState(false);
 
   // 가입 신청 목록 및 로딩 상태
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
@@ -226,6 +236,29 @@ export default function ParentSettingsPage() {
       setLoadingSentInvites(false);
     }
   }, [store.activeFamilyId, isOwner]);
+
+  const commitChildSave = async () => {
+    if (!editName.trim() || !editChild) return;
+    updateChild(editChild.id, {
+      name: editName.trim(),
+      grade: editGrade,
+      interests: editInterests,
+    });
+    if (editTier !== editOriginalTier) {
+      setSavingTier(true);
+      try {
+        await fetch(`/api/child/${editChild.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tier: editTier }),
+        });
+      } catch {} finally {
+        setSavingTier(false);
+      }
+    }
+    setEditChild(null);
+    loadFamilyMembers();
+  };
 
   const handleAddChild = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -743,25 +776,13 @@ export default function ParentSettingsPage() {
                 <button
                   onClick={async () => {
                     if (!editName.trim() || !editChild) return;
-                    updateChild(editChild.id, {
-                      name: editName.trim(),
-                      grade: editGrade,
-                      interests: editInterests,
-                    });
-                    if (editTier !== editOriginalTier) {
-                      setSavingTier(true);
-                      try {
-                        await fetch(`/api/child/${editChild.id}`, {
-                          method: "PATCH",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ tier: editTier }),
-                        });
-                      } catch {} finally {
-                        setSavingTier(false);
-                      }
+                    // 다운그레이드(요금제 하향)면 저장 직전 확인 모달을 먼저 띄운다 — "확인"을
+                    // 누르기 전까지는 이름/관심사 등 다른 항목도 포함해 어떤 변경도 커밋하지 않는다.
+                    if (editTier < editOriginalTier) {
+                      setShowDowngradeConfirm(true);
+                      return;
                     }
-                    setEditChild(null);
-                    loadFamilyMembers();
+                    await commitChildSave();
                   }}
                   disabled={savingTier}
                   className="flex-1 py-2 bg-[#1a6b5a] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
@@ -770,6 +791,38 @@ export default function ParentSettingsPage() {
                 </button>
                 <button
                   onClick={() => setEditChild(null)}
+                  className="flex-1 py-2 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showDowngradeConfirm && editChild && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
+            <div className="bg-white rounded-2xl p-5 max-w-xs w-full">
+              <p className="text-sm font-bold mb-2" style={{ color: "#1e1e2d" }}>
+                요금제를 낮추시겠어요?
+              </p>
+              <p className="text-xs leading-relaxed text-gray-500 mb-4">
+                {formatRetentionLabel(editTier as Tier)} 초과 데이터는 1개월 후 완전 파기됩니다. 1개월 안에 다시
+                요금제를 올리면 데이터를 복구할 수 있어요.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    setShowDowngradeConfirm(false);
+                    await commitChildSave();
+                  }}
+                  disabled={savingTier}
+                  className="flex-1 py-2 bg-[#1a6b5a] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
+                >
+                  확인
+                </button>
+                <button
+                  onClick={() => setShowDowngradeConfirm(false)}
                   className="flex-1 py-2 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer"
                 >
                   취소

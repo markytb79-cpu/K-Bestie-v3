@@ -54,16 +54,22 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
   // 여전히 로딩 중일 때만 스켈레톤을 보여줘서, 빠른 경우엔 하드컷 없이 바로 콘텐츠가 뜬다.
   const [showSkeleton, setShowSkeleton] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Care Start 계정은 상세 필드(parent_guide/dashboard_cards)가 서버에서 스트리핑된 채 내려온다 —
+  // "빠른 요약" 탭은 그대로 보되, "상세 보기"/"추천 가이드" 탭만 잠금 안내로 대체한다.
+  const [restricted, setRestricted] = useState(false);
   const [activeTab, setActiveTab] = useState(1);
 
   useEffect(() => {
     const skeletonTimer = setTimeout(() => setShowSkeleton(true), 150);
 
     fetch(`/api/parent/reports/${id}`)
-      .then((r) => r.json())
-      .then((d) => {
+      .then(async (r) => {
+        const d = await r.json();
         if (d.error) setError(d.error);
-        else setReport(d.report);
+        else {
+          setReport(d.report);
+          setRestricted(Boolean(d.restricted));
+        }
       })
       .catch((e) => setError(e.message))
       .finally(() => {
@@ -222,8 +228,28 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
     );
   };
 
+  const LockedTabNotice = () => (
+    <div className="bg-white rounded-2xl px-5 py-10 shadow-sm flex flex-col items-center text-center">
+      <p className="text-4xl mb-3">🔒</p>
+      <p className="text-sm font-bold mb-2" style={{ color: "#1e1e2d" }}>
+        상세 리포트는 Care Insight로 업그레이드하세요
+      </p>
+      <p className="text-xs text-gray-400 mb-5">
+        Care Start에서는 빠른 요약만 제공돼요. 상세 대시보드와 추천 가이드는 Insight 이상에서 볼 수 있어요.
+      </p>
+      <Link
+        href="/parent/settings"
+        className="px-5 py-2.5 rounded-full text-xs font-bold text-white"
+        style={{ background: "#1a6b5a" }}
+      >
+        요금제 업그레이드
+      </Link>
+    </div>
+  );
+
   const renderTab = () => {
     if (activeTab === 1) return <Tab1 />;
+    if (restricted) return <LockedTabNotice />;
     if (activeTab === 2) return <Tab2 />;
     return <Tab3 />;
   };
@@ -256,7 +282,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
                   color: activeTab === tab.id ? "#ffffff" : "#3a3a4a",
                 }}
               >
-                {tab.label}
+                {tab.id !== 1 && restricted ? `🔒 ${tab.label}` : tab.label}
               </button>
             ))}
           </div>

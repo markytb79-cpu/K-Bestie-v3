@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { getActiveReportModel } from "@/app/api/_lib/ai";
+import { getModelForGroup, createGenAIClient, createAIStudioFallbackClient } from "@/app/api/_lib/ai";
 import { REPORT_PROMPT_TEMPLATE } from "@/app/api/_lib/prompts";
+import { resolveUsageContext } from "@/lib/plan/voiceMode";
+import { estimateCost } from "@/lib/plan/pricing";
 import type { Turn } from "@/hooks/useGeminiLive";
 
 export const runtime = "nodejs";
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = createServiceClient();
-  const reportModel = getActiveReportModel();
+  const reportModel = await getModelForGroup("A");
 
   // 1. 세션 종료 시각 + 턴 수 업데이트
   const turnCount = transcript.filter((t) => t.role === "child").length;
@@ -66,11 +67,17 @@ export async function POST(req: NextRequest) {
     .join("\n");
   const prompt = REPORT_PROMPT_TEMPLATE.replace("{{TRANSCRIPT}}", transcriptText);
 
-  const apiKey = process.env.GEMMA_API_KEY!;
-  const ai = new GoogleGenAI({ apiKey });
+  let ai;
+  try {
+    ai = createGenAIClient(reportModel);
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+  }
 
   let resultText = "";
   let success = false;
+  let usedTokenIn: number | undefined;
+  let usedTokenOut: number | undefined;
   const RETRY_DELAYS = [0, 3000, 5000];
 
   // 3-1. Gemma 4 모델로 재시도 루프
@@ -96,6 +103,8 @@ export async function POST(req: NextRequest) {
       // JSON 문법 유효성 사전 검사
       JSON.parse(resultText);
       success = true;
+      usedTokenIn = response.usageMetadata?.promptTokenCount;
+      usedTokenOut = response.usageMetadata?.candidatesTokenCount;
       console.log(`[report/generate] Success with model: ${reportModel.modelId}`);
       break;
     } catch (err) {
@@ -106,11 +115,13 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 3-2. 실패 시 gemini-2.5-flash 모델로 폴백
+  // 3-2. 실패 시 gemini-2.5-flash 모델로 폴백 — provider와 무관하게 항상 AI Studio로
+  // 교차 회귀한다(Vertex 장애 시에도 서비스 연속성 확보).
   if (!success) {
-    console.warn(`[report/generate] Gemma 4 failed completely. Falling back to gemini-2.5-flash...`);
+    console.warn(`[report/generate] ${reportModel.modelId}(${reportModel.provider}) failed completely. Falling back to AI Studio gemini-2.5-flash...`);
     try {
-      const response = await ai.models.generateContent({
+      const fallbackAi = createAIStudioFallbackClient();
+      const response = await fallbackAi.models.generateContent({
         model: "gemini-2.5-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: {
@@ -122,11 +133,38 @@ export async function POST(req: NextRequest) {
       resultText = (response.text ?? "").trim();
       JSON.parse(resultText);
       success = true;
+      usedTokenIn = response.usageMetadata?.promptTokenCount;
+      usedTokenOut = response.usageMetadata?.candidatesTokenCount;
       console.log(`[report/generate] Success with fallback model: gemini-2.5-flash`);
     } catch (fallbackErr) {
       console.error(`[report/generate] Fallback model also failed:`, (fallbackErr as Error).message);
       return NextResponse.json({ error: "Gemma 4 and fallback model both failed to generate valid report" }, { status: 500 });
     }
+  }
+
+  // usage_events(kind='llm') 계측 — 응답 자체를 막지 않도록 after()로 비동기 처리.
+  if (usedTokenIn != null && usedTokenOut != null) {
+    const tokenIn = usedTokenIn;
+    const tokenOut = usedTokenOut;
+    after(async () => {
+      try {
+        const ctx = await resolveUsageContext(sessionId);
+        if (!ctx) return;
+        const service2 = createServiceClient();
+        const estCostKrw = estimateCost({ kind: "llm", tokenIn, tokenOut });
+        await service2.from("usage_events").insert({
+          child_id: ctx.childId,
+          tier: ctx.tier,
+          voice_mode: ctx.voiceMode,
+          kind: "llm",
+          token_in: tokenIn,
+          token_out: tokenOut,
+          est_cost_krw: estCostKrw,
+        });
+      } catch (err) {
+        console.error("[report/generate] usage_events insert failed:", (err as Error).message);
+      }
+    });
   }
 
   let report: {

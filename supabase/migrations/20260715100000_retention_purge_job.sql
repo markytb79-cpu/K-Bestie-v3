@@ -1,0 +1,53 @@
+-- ⚠️ 초안만 작성 — 실행 전 대표 승인 필수(하드룰: DB 실행 금지, SQL 생성만).
+-- 이 마이그레이션은 아무것도 실행하지 않는다(cron.schedule 호출은 아래 주석 블록 안에만 존재).
+-- 실제 등록은 대표 승인 후, 이 주석을 해제하여 Supabase SQL Editor에서 직접 실행할 것.
+--
+-- ⚠️ 활성화 전 필수 확인: 기존 선례 `20260713200000_conversation_purge_job.sql`은
+--   `chat_sessions.created_at` 컬럼을 참조하는데, 이 컬럼은 실제로 존재하지 않는다
+--   (chat_sessions는 started_at만 보유 — 20260609400000_family_clean_slate.sql L106-114).
+--   그 선례가 이미 등록(cron.schedule)되어 있다면 반드시 먼저 `cron.unschedule`로
+--   해제하거나 `started_at` 기준으로 교정한 뒤, 이 마이그레이션을 활성화할 것.
+--
+-- 목적: 요금제 축소(다운그레이드) 시 lib/plan/retentionStamp.ts의 stampRetention()이
+--   이미 deleted_at을 스탬프해둔 데이터 중, 30일 유예가 지난 것만 물리 삭제한다.
+--   나이 판정(어느 세션/주간요약이 보존기간을 초과했는지)은 스탬프 시점에 이미
+--   chat_sessions.started_at / weekly_summaries.week_start 기준으로 끝났으므로,
+--   이 Cron은 오직 deleted_at 스탬프 나이(30일 유예)만 확인한다 — 어떤 문에도
+--   chat_sessions.created_at을 사용하지 않는다.
+--
+-- 파기 대상: chat_sessions(부모) / chat_messages / daily_reports / weekly_summaries — 4개.
+-- safety_events는 절대 포함하지 않는다(관리자 전용 내부 안전 모니터링 데이터, 영구 보관).
+--
+-- 이중 조건: deleted_at IS NOT NULL(스탬프된 것만) AND deleted_at < now() - interval '30 days'
+--   (유예 기간 지난 것만) — 활성(deleted_at NULL) 데이터가 실수로 걸리지 않도록 두 조건 모두 필수.
+--
+-- 첫 실행은 실제 DELETE가 아니라 아래 count 드라이런으로 테이블별 대상 건수만 먼저 확인할 것:
+--   SELECT
+--     (SELECT count(*) FROM chat_sessions   WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '30 days') AS chat_sessions_count,
+--     (SELECT count(*) FROM chat_messages   WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '30 days') AS chat_messages_count,
+--     (SELECT count(*) FROM daily_reports   WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '30 days') AS daily_reports_count,
+--     (SELECT count(*) FROM weekly_summaries WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '30 days') AS weekly_summaries_count;
+--
+-- ── (비활성) 매일 04:30 KST = 19:30 UTC 실행 예정 크론 등록 예시 ──────────────
+-- select cron.schedule(
+--   'kbestie-retention-purge',
+--   '30 19 * * *',
+--   $$
+--   -- 자식 → 부모 순서로 삭제(고아 방지). deleted_at 스탬프된 것만, 30일 유예 지난 것만.
+--   delete from chat_messages
+--   where deleted_at is not null and deleted_at < now() - interval '30 days';
+--
+--   delete from daily_reports
+--   where deleted_at is not null and deleted_at < now() - interval '30 days';
+--
+--   delete from chat_sessions
+--   where deleted_at is not null and deleted_at < now() - interval '30 days';
+--
+--   -- weekly_summaries는 session_id가 없는 독립 집계 — child_id 스코프로 별도 스윕.
+--   delete from weekly_summaries
+--   where deleted_at is not null and deleted_at < now() - interval '30 days';
+--   $$
+-- );
+--
+-- ── 등록 해제(참고용) ──
+-- select cron.unschedule('kbestie-retention-purge');

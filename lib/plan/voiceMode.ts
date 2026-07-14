@@ -39,3 +39,26 @@ export async function getVoiceModeForChild(
     return { tier: DEFAULT_TIER, voiceMode: DEFAULT_VOICE_MODE, liveVoiceName: DEFAULT_LIVE_VOICE_NAME };
   }
 }
+
+export interface UsageContext {
+  childId: string;
+  tier: number;
+  voiceMode: VoiceMode;
+}
+
+/** usage_events 계측용 — sessionId만으로 child_id/tier/voice_mode를 서버가 직접 해석한다(server-trust).
+ *  sessionId가 없거나 세션을 찾지 못하면 null(로깅만 생략, 응답 자체는 막지 않음). */
+export async function resolveUsageContext(sessionId: string | null | undefined): Promise<UsageContext | null> {
+  if (!sessionId) return null;
+
+  const service = createServiceClient();
+  const { data: session } = await service
+    .from("chat_sessions")
+    .select("child_id")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (!session?.child_id) return null;
+
+  const { tier, voiceMode } = await getVoiceModeForChild(session.child_id);
+  return { childId: session.child_id, tier, voiceMode };
+}

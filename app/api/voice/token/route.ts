@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import { getActiveVoiceModel } from "@/app/api/_lib/ai";
+import { getModelForGroup } from "@/app/api/_lib/ai";
 import { K_SYSTEM_PROMPT } from "@/app/api/_lib/prompts";
 
 export const runtime = "nodejs";
@@ -12,7 +12,14 @@ export async function POST() {
     return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
   }
 
-  const voiceModel = getActiveVoiceModel();
+  // 그룹C(라이브) 스위치 조회 — 연결 시작 시점에 1회 스냅샷되어 세션 수명 동안 고정된다
+  // (클라이언트 useGeminiLive.startSession()이 매 연결마다 이 라우트를 새로 호출하므로,
+  // 이미 연결된 세션은 관리자가 스위치를 바꿔도 영향받지 않고 다음 연결부터 반영됨).
+  const voiceModel = await getModelForGroup("C");
+  // TODO(follow-up): Vertex Live 오디오는 AI Studio의 ephemeral authTokens 메커니즘과
+  // 인증 방식이 완전히 다른 WebSocket 릴레이가 필요해 이번 스코프에서는 미구현.
+  // 그룹C가 Vertex로 전환돼도 라이브 연결만은 AI Studio 모델로 안전하게 유지한다.
+  const liveModelId = voiceModel.provider === "vertex" ? "gemini-3.1-flash-live-preview" : voiceModel.modelId;
 
   const ai = new GoogleGenAI({
     apiKey,
@@ -30,7 +37,7 @@ export async function POST() {
       uses: 1,
       expireTime,
       liveConnectConstraints: {
-        model: voiceModel.modelId,
+        model: liveModelId,
         config: {
           systemInstruction: { parts: [{ text: K_SYSTEM_PROMPT }] },
         },
@@ -41,7 +48,7 @@ export async function POST() {
 
   return NextResponse.json({
     token: token.name,
-    model: voiceModel.modelId,
+    model: liveModelId,
     expiresAt: expireTime,
   });
 }

@@ -1,6 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { CHILD_SPEECH_HINTS, CHILD_SPEECH_HINT_BOOST } from "@/lib/stt/childSpeechHints";
+import { resolveUsageContext } from "@/lib/plan/voiceMode";
+import { estimateCost } from "@/lib/plan/pricing";
+
+// LINEAR16/16kHz/mono 고정 인코딩 기준 — 1초 = 16000 샘플 * 2바이트
+const PCM16_BYTES_PER_SEC = 16000 * 2;
 
 export const runtime = "nodejs";
 
@@ -18,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "STT not configured" }, { status: 500 });
   }
 
-  let body: { audioBase64?: string };
+  let body: { audioBase64?: string; sessionId?: string };
   try {
     body = await req.json();
   } catch {
@@ -29,6 +34,10 @@ export async function POST(req: NextRequest) {
   if (!audioBase64 || typeof audioBase64 !== "string") {
     return NextResponse.json({ error: "audioBase64 required" }, { status: 400 });
   }
+
+  // 비용에 영향을 주는 child_id/tier/voice_mode는 클라이언트에서 직접 받지 않고
+  // sessionId로만 서버가 해석한다(server-trust). sessionId 미전달 시 로깅만 생략.
+  const usageContext = await resolveUsageContext(body.sessionId);
 
   try {
     const gcpRes = await fetch(
@@ -62,6 +71,27 @@ export async function POST(req: NextRequest) {
       .map((r) => r.alternatives?.[0]?.transcript ?? "")
       .join("")
       .trim();
+
+    if (usageContext) {
+      const ctx = usageContext;
+      const durationSec = Buffer.from(audioBase64, "base64").length / PCM16_BYTES_PER_SEC;
+      const estCostKrw = estimateCost({ kind: "stt", durationSec });
+      after(async () => {
+        try {
+          const service = createServiceClient();
+          await service.from("usage_events").insert({
+            child_id: ctx.childId,
+            tier: ctx.tier,
+            voice_mode: ctx.voiceMode,
+            kind: "stt",
+            duration_sec: durationSec,
+            est_cost_krw: estCostKrw,
+          });
+        } catch (err) {
+          console.error("[mission/stt] usage_events insert failed:", (err as Error).message);
+        }
+      });
+    }
 
     return NextResponse.json({ transcript });
   } catch (err) {

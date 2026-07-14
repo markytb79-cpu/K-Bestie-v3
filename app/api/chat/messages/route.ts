@@ -66,14 +66,14 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { sessionId?: string; role?: string; content?: string };
+  let body: { sessionId?: string; role?: string; content?: string; voiceMode?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { sessionId, role, content } = body;
+  const { sessionId, role, content, voiceMode: bodyVoiceMode } = body;
   if (!sessionId || !role || !content?.trim()) {
     return NextResponse.json({ error: "sessionId, role, content required" }, { status: 400 });
   }
@@ -91,10 +91,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
+  // mode: 기존 session_type 재사용(추가 쿼리 없음). 자유대화는 라이브가 없으므로
+  // voice_mode를 클라이언트 입력과 무관하게 항상 stt_tts로 서버가 클램프한다.
+  const mode: "mission" | "free" = session.session_type === "mission" ? "mission" : "free";
+  const voiceMode: "stt_tts" | "live" =
+    mode === "free" ? "stt_tts" : bodyVoiceMode === "live" ? "live" : "stt_tts";
+
   const service = createServiceClient();
   const { error } = await service
     .from("chat_messages")
-    .insert({ session_id: sessionId, role, content: content.trim() });
+    .insert({ session_id: sessionId, role, content: content.trim(), mode, voice_mode: voiceMode });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -7,16 +7,68 @@
 //    운영 크론 경로가 아니다. 로직 변경 시 양쪽을 함께 맞춰야 한다.
 //
 // 프롬프트/모델 설정은 Next 쪽 순수 모듈을 그대로 재사용(중복 방지):
-//   - app/api/_lib/prompts.ts  (REPORT_PROMPT_TEMPLATE, WEEKLY_SUMMARY_PROMPT_TEMPLATE)
-//   - app/api/_lib/ai.ts       (getActiveReportModel)
+//   - app/api/_lib/prompts.ts  (REPORT_PROMPT_TEMPLATE, WEEKLY_REPORT_PROMPT_TEMPLATE)
+//   - app/api/_lib/ai.ts       (getActiveReportModel — provider_switch_settings 미조회 시 폴백용)
 // 두 파일은 외부 import가 없는 순수 TS라 Deno에서 그대로 import 가능하다.
+//
+// provider_switch_settings(그룹A)를 이 파일에서 직접 조회한다 — Next.js ai.ts의
+// getModelForGroup()은 Next 전용 createServiceClient()에 의존해 Deno에서 재사용 불가.
+// Vertex 인증은 npm:google-auth-library(JWT 서비스 계정)로 OAuth 액세스 토큰을 얻어
+// Vertex generateContent REST 엔드포인트를 직접 호출한다(GEMMA_API_KEY와 무관, 별도 자격증명).
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { GoogleAuth } from "npm:google-auth-library@9";
 import {
   REPORT_PROMPT_TEMPLATE,
-  WEEKLY_SUMMARY_PROMPT_TEMPLATE,
+  WEEKLY_REPORT_PROMPT_TEMPLATE,
 } from "../../../app/api/_lib/prompts.ts";
 import { getActiveReportModel } from "../../../app/api/_lib/ai.ts";
+
+type ProviderId = "ai_studio" | "vertex";
+
+interface GroupAModelResolved {
+  provider: ProviderId;
+  modelId: string;
+  apiBase: string;
+  maxOutputTokens: number;
+}
+
+let cachedVertexAuth: GoogleAuth | null = null;
+
+/** GCP_VERTEX_SA_KEY_JSON 서비스 계정으로 Vertex AI 액세스 토큰 발급(GCP_BILLING_SA_KEY_JSON과 완전 분리). */
+async function getVertexAccessToken(): Promise<string> {
+  const keyJson = Deno.env.get("GCP_VERTEX_SA_KEY_JSON");
+  if (!keyJson) throw new Error("GCP_VERTEX_SA_KEY_JSON not configured");
+  if (!cachedVertexAuth) {
+    const credentials = JSON.parse(keyJson);
+    cachedVertexAuth = new GoogleAuth({
+      credentials,
+      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    });
+  }
+  const client = await cachedVertexAuth.getClient();
+  const token = await client.getAccessToken();
+  if (!token.token) throw new Error("Vertex 액세스 토큰 발급 실패");
+  return token.token;
+}
+
+/** 그룹A(리포트·요약) provider/model을 provider_switch_settings에서 조회.
+ *  조회 실패/미실행 시 기존 getActiveReportModel() 기반 AI Studio로 안전하게 폴백. */
+async function resolveGroupAModel(db: SupabaseClient): Promise<GroupAModelResolved> {
+  const fallback = getActiveReportModel();
+  try {
+    const { data } = await db
+      .from("provider_switch_settings")
+      .select("provider, model_id")
+      .eq("group", "A")
+      .maybeSingle();
+    const provider = (data?.provider as ProviderId | undefined) ?? "ai_studio";
+    const modelId = data?.model_id ?? fallback.modelId;
+    return { provider, modelId, apiBase: fallback.apiBase, maxOutputTokens: fallback.maxOutputTokens };
+  } catch {
+    return { provider: "ai_studio", modelId: fallback.modelId, apiBase: fallback.apiBase, maxOutputTokens: fallback.maxOutputTokens };
+  }
+}
 
 const DASHBOARD_KEYS = [
   "school_life",
@@ -51,12 +103,11 @@ export function serviceClient(): SupabaseClient {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-/** Gemini/Gemma REST 직접 호출 (Deno에서 @google/genai 대신 fetch 사용) */
-async function callReportModel(prompt: string, maxOutputTokens: number): Promise<string> {
-  const model = getActiveReportModel();
+/** AI Studio(Gemini/Gemma) REST 직접 호출 */
+async function callAiStudio(modelId: string, apiBase: string, prompt: string, maxOutputTokens: number): Promise<string> {
   const apiKey = Deno.env.get("GEMMA_API_KEY")!;
   const res = await fetch(
-    `${model.apiBase}/v1beta/models/${model.modelId}:generateContent?key=${apiKey}`,
+    `${apiBase}/v1beta/models/${modelId}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -74,6 +125,52 @@ async function callReportModel(prompt: string, maxOutputTokens: number): Promise
   }
   const data = await res.json();
   return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+}
+
+/** Vertex AI generateContent REST 호출 — GCP_VERTEX_SA_KEY_JSON 서비스 계정 OAuth 토큰 사용. */
+async function callVertex(modelId: string, prompt: string, maxOutputTokens: number): Promise<string> {
+  const project = Deno.env.get("GOOGLE_CLOUD_PROJECT");
+  if (!project) throw new Error("GOOGLE_CLOUD_PROJECT not configured");
+  const location = Deno.env.get("GOOGLE_CLOUD_LOCATION") || "us-central1";
+  const accessToken = await getVertexAccessToken();
+
+  const res = await fetch(
+    `https://${location}-aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/publishers/google/models/${modelId}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          maxOutputTokens,
+        },
+      }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Vertex API ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+  const data = await res.json();
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+}
+
+/** 그룹A 모델 호출 — provider에 따라 AI Studio/Vertex 분기. Vertex 실패 시 항상
+ *  AI Studio(getActiveReportModel 고정 모델)로 교차 회귀한다(서비스 연속성). */
+async function callReportModel(model: GroupAModelResolved, prompt: string, maxOutputTokens: number): Promise<string> {
+  if (model.provider === "vertex") {
+    try {
+      return await callVertex(model.modelId, prompt, maxOutputTokens);
+    } catch (err) {
+      console.error(`[batch] Vertex 호출 실패, AI Studio로 교차 회귀:`, (err as Error).message);
+      const fallback = getActiveReportModel();
+      return await callAiStudio(fallback.modelId, fallback.apiBase, prompt, maxOutputTokens);
+    }
+  }
+  return await callAiStudio(model.modelId, model.apiBase, prompt, maxOutputTokens);
 }
 
 /** Step 1: 자유 대화 세션 마감 */
@@ -130,7 +227,7 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
   if (fetchErr) throw new Error(`generateDailyReports: 세션 조회 실패 — ${fetchErr.message}`);
   if (!sessions?.length) return result;
 
-  const reportModel = getActiveReportModel();
+  const reportModel = await resolveGroupAModel(db);
 
   for (const session of sessions) {
     try {
@@ -151,7 +248,7 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
         .join("\n");
       const prompt = REPORT_PROMPT_TEMPLATE.replace("{{TRANSCRIPT}}", transcriptText);
 
-      const text = await callReportModel(prompt, reportModel.maxOutputTokens);
+      const text = await callReportModel(reportModel, prompt, reportModel.maxOutputTokens);
 
       let report: {
         summary_line?: string;
@@ -213,7 +310,96 @@ function getWeekBounds(targetDate: string): { weekStart: string; weekEnd: string
   return { weekStart: fmt(mon), weekEnd: fmt(sun) };
 }
 
-/** Step 3: 주간 요약 (weekend_activity_recommendation 포함). 토요일(6) 또는 forceWeekly */
+interface WeeklyReportJson {
+  summary_text?: string;
+  detail_text?: string;
+  detail_dashboard_cards?: Record<string, string>;
+  mood_average?: number;
+  highlights?: string[];
+  parent_guide?: string;
+  weekend_activity_recommendation?: string;
+}
+
+// 원문 재분석 입력 토큰 상한 근사치(문자 수) — 초과 시 청크 맵-리듀스로 압축한다.
+const MAX_TRANSCRIPT_CHARS = 60_000;
+const CHUNK_CHARS = 20_000;
+
+function chunkText(text: string, chunkSize: number): string[] {
+  if (text.length <= chunkSize) return [text];
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < text.length) {
+    let end = Math.min(start + chunkSize, text.length);
+    if (end < text.length) {
+      const lastNewline = text.lastIndexOf("\n", end);
+      if (lastNewline > start) end = lastNewline;
+    }
+    chunks.push(text.slice(start, end));
+    start = end;
+  }
+  return chunks;
+}
+
+async function mapChunkSummary(model: GroupAModelResolved, chunk: string): Promise<string> {
+  const prompt = `다음은 아이와 AI 친구 케이의 대화 원문 일부입니다. 아이의 상태·관심사·감정·주말 희망사항과 관련된 내용을 놓치지 않고 5~8문장으로 압축 요약해줘(다른 설명 없이 요약문만):\n\n${chunk}`;
+  return await callReportModel(model, prompt, 512);
+}
+
+async function reduceToWeeklyReport(model: GroupAModelResolved, weekRange: string, transcriptText: string): Promise<WeeklyReportJson> {
+  const prompt = WEEKLY_REPORT_PROMPT_TEMPLATE
+    .replace("{{WEEK_RANGE}}", weekRange)
+    .replace("{{TRANSCRIPT}}", transcriptText);
+  const text = await callReportModel(model, prompt, 2048);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`주간 리포트 JSON 파싱 실패: ${text.slice(0, 100)}`);
+  }
+}
+
+/** 원문 재분석 — 토큰 상한 초과 시 청크 맵-리듀스로 압축한 뒤 리듀스. */
+async function analyzeWeekTranscript(model: GroupAModelResolved, weekRange: string, transcriptText: string): Promise<WeeklyReportJson> {
+  if (transcriptText.length <= MAX_TRANSCRIPT_CHARS) {
+    return reduceToWeeklyReport(model, weekRange, transcriptText);
+  }
+  console.warn(`[generateWeeklySummary] 원문(${transcriptText.length}자)이 상한 초과 — 청크 맵-리듀스로 압축`);
+  const chunks = chunkText(transcriptText, CHUNK_CHARS);
+  const chunkSummaries: string[] = [];
+  for (const chunk of chunks) {
+    chunkSummaries.push(await mapChunkSummary(model, chunk));
+  }
+  const reducedTranscript = chunkSummaries.map((s, i) => `[구간 ${i + 1} 요약]\n${s}`).join("\n\n");
+  return reduceToWeeklyReport(model, weekRange, reducedTranscript);
+}
+
+/** 최후 폴백 — 청크 맵-리듀스 후에도 실패하면 daily_reports 요약 이어붙이기로 강등(로그 남김). */
+async function fallbackFromDailyReports(
+  db: SupabaseClient,
+  model: GroupAModelResolved,
+  childId: string,
+  weekStart: string,
+  weekEnd: string,
+  weekRange: string,
+): Promise<WeeklyReportJson> {
+  console.error(`[generateWeeklySummary] 원문 재분석 실패 — child ${childId}는 daily_reports 요약 이어붙이기로 폴백`);
+  const { data: reports } = await db
+    .from("daily_reports")
+    .select("summary_line, mood_score, emotion_tags, chat_sessions!inner(child_id)")
+    .eq("chat_sessions.child_id", childId)
+    .gte("created_at", `${weekStart}T00:00:00Z`)
+    .lte("created_at", `${weekEnd}T23:59:59Z`);
+
+  const dailySummaries = (reports ?? [])
+    .map((r: { summary_line: string; mood_score: number; emotion_tags: string[] }, i: number) =>
+      `Day ${i + 1}: ${r.summary_line} (기분 ${r.mood_score}/10, 태그: ${r.emotion_tags.join(", ")})`)
+    .join("\n");
+
+  return reduceToWeeklyReport(model, weekRange, dailySummaries || "이번 주 기록된 대화가 없습니다.");
+}
+
+/** Step 3: 주간 리포트 — 그 주 대화 원문 전체를 재분석해 요약+상세를 함께 생성(이어붙이기 금지).
+ *  토큰 상한 초과 시 청크 맵-리듀스, 그래도 실패하면 daily_reports 요약으로 자동 강등.
+ *  토요일(6) 또는 forceWeekly */
 export async function generateWeeklySummary(
   db: SupabaseClient,
   targetDate: string,
@@ -226,73 +412,56 @@ export async function generateWeeklySummary(
 
   const { weekStart, weekEnd } = getWeekBounds(targetDate);
 
-  const { data: reports, error: fetchErr } = await db
-    .from("daily_reports")
-    .select(`
-      id,
-      summary_line,
-      mood_score,
-      emotion_tags,
-      parent_guide,
-      chat_sessions!inner ( child_id )
-    `)
-    .gte("created_at", `${weekStart}T00:00:00Z`)
-    .lte("created_at", `${weekEnd}T23:59:59Z`);
+  const { data: sessionsWithChild, error: fetchErr } = await db
+    .from("chat_sessions")
+    .select("id, child_id")
+    .gte("started_at", `${weekStart}T00:00:00Z`)
+    .lte("started_at", `${weekEnd}T23:59:59Z`);
 
-  if (fetchErr) throw new Error(`generateWeeklySummary: 리포트 조회 실패 — ${fetchErr.message}`);
-  if (!reports?.length) return result;
+  if (fetchErr) throw new Error(`generateWeeklySummary: 세션 조회 실패 — ${fetchErr.message}`);
+  if (!sessionsWithChild?.length) return result;
 
-  type ReportRow = {
-    id: string;
-    summary_line: string;
-    mood_score: number;
-    emotion_tags: string[];
-    parent_guide: string;
-    chat_sessions: { child_id: string } | { child_id: string }[];
-  };
-
-  const byChild = new Map<string, ReportRow[]>();
-  for (const r of reports as ReportRow[]) {
-    const sess = Array.isArray(r.chat_sessions) ? r.chat_sessions[0] : r.chat_sessions;
-    const childId = sess?.child_id;
-    if (!childId) continue;
-    if (!byChild.has(childId)) byChild.set(childId, []);
-    byChild.get(childId)!.push(r);
+  const sessionsByChild = new Map<string, string[]>();
+  for (const s of sessionsWithChild as { id: string; child_id: string }[]) {
+    if (!sessionsByChild.has(s.child_id)) sessionsByChild.set(s.child_id, []);
+    sessionsByChild.get(s.child_id)!.push(s.id);
   }
 
   const weekRange = `${weekStart} ~ ${weekEnd}`;
+  const reportModel = await resolveGroupAModel(db);
 
-  for (const [childId, childReports] of byChild) {
+  for (const [childId, sessionIds] of sessionsByChild) {
     try {
-      if (!childReports.length) {
+      if (!sessionIds.length) {
         result.skipped.push(childId);
         continue;
       }
 
-      const dailySummaries = childReports
-        .map((r, i) => `Day ${i + 1}: ${r.summary_line} (기분 ${r.mood_score}/10, 태그: ${r.emotion_tags.join(", ")})`)
-        .join("\n");
+      const { data: messages, error: msgErr } = await db
+        .from("chat_messages")
+        .select("role, content")
+        .in("session_id", sessionIds)
+        .order("created_at", { ascending: true });
 
-      const prompt = WEEKLY_SUMMARY_PROMPT_TEMPLATE
-        .replace("{{WEEK_RANGE}}", weekRange)
-        .replace("{{DAILY_SUMMARIES}}", dailySummaries);
-
-      const text = await callReportModel(prompt, 1024);
-
-      let summary: {
-        summary_text?: string;
-        mood_average?: number;
-        highlights?: string[];
-        parent_guide?: string;
-        weekend_activity_recommendation?: string;
-      };
-      try {
-        summary = JSON.parse(text);
-      } catch {
-        throw new Error(`JSON 파싱 실패: ${text.slice(0, 100)}`);
+      if (msgErr) throw new Error(msgErr.message);
+      if (!messages?.length) {
+        result.skipped.push(childId);
+        continue;
       }
 
-      const moodAverage = Math.max(1, Math.min(10, Math.round((summary.mood_average ?? 5) * 10) / 10));
+      const transcriptText = (messages as { role: string; content: string }[])
+        .map((m) => `${m.role === "child" ? "아이" : "케이"}: ${m.content}`)
+        .join("\n");
+
+      let report: WeeklyReportJson;
+      try {
+        report = await analyzeWeekTranscript(reportModel, weekRange, transcriptText);
+      } catch (analyzeErr) {
+        console.error(`[generateWeeklySummary] 청크 맵-리듀스도 실패:`, (analyzeErr as Error).message);
+        report = await fallbackFromDailyReports(db, reportModel, childId, weekStart, weekEnd, weekRange);
+      }
+
+      const moodAverage = Math.max(1, Math.min(10, Math.round((report.mood_average ?? 5) * 10) / 10));
 
       const { data: inserted, error: insertErr } = await db
         .from("weekly_summaries")
@@ -301,11 +470,13 @@ export async function generateWeeklySummary(
             child_id: childId,
             week_start: weekStart,
             week_end: weekEnd,
-            summary_text: summary.summary_text ?? "",
+            summary_text: report.summary_text ?? "",
+            detail_text: report.detail_text ?? "",
+            detail_dashboard_cards: report.detail_dashboard_cards ?? {},
             mood_average: moodAverage,
-            highlights: summary.highlights ?? [],
-            parent_guide: summary.parent_guide ?? "",
-            weekend_activity_recommendation: summary.weekend_activity_recommendation ?? "",
+            highlights: report.highlights ?? [],
+            parent_guide: report.parent_guide ?? "",
+            weekend_activity_recommendation: report.weekend_activity_recommendation ?? "",
           },
           { onConflict: "child_id,week_start" },
         )

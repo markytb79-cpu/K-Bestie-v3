@@ -22,6 +22,9 @@
 .env.local
 .env.*.local
 
+# supabase secrets 등록용 임시 env 파일 — 절대 커밋 금지
+supabase/.env.secrets
+
 # vercel
 .vercel
 
@@ -36,6 +39,12 @@ Thumbs.db
 # ssl certs / keys
 *.pem
 *.key
+
+# GCP service account keys — 절대 커밋 금지
+*-b8beddefb7c2.json
+k-bestie3-*.json
+*service-account*.json
+*sa-key*.json
 
 # omc internal state (Claude Code tool metadata)
 .omc/

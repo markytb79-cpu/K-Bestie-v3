@@ -64,6 +64,8 @@ function MissionInner() {
   const [liveVoiceName, setLiveVoiceName] = useState<string>("Achernar");
 
   const sessionIdRef = useRef<string | null>(null);
+  const voiceModeRef = useRef<VoiceMode | null>(null);
+  voiceModeRef.current = voiceMode;
   const questionsRef = useRef<MissionQuestion[]>([]);
   const currentIndexRef = useRef(0);
   const questionStatesRef = useRef<Record<string, QuestionState>>({});
@@ -85,7 +87,7 @@ function MissionInner() {
     fetch("/api/chat/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: sid, role, content }),
+      body: JSON.stringify({ sessionId: sid, role, content, voiceMode: voiceModeRef.current }),
     }).catch(() => {});
   }, []);
 
@@ -155,6 +157,7 @@ function MissionInner() {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
+                sessionId: sessionIdRef.current,
                 history: getTranscriptRef.current?.() ?? [],
                 nextQuestionText: nextQ.question_text,
               }),
@@ -181,8 +184,8 @@ function MissionInner() {
   // voiceMode(tier)에 따라 실제로 사용하는 쪽만 startSession되도록 분기한다.
   // - stt_tts (Tier1/2): GCP STT(주기호출) + Wavenet-A TTS
   // - live (Tier3): Gemini Live API 네이티브 오디오(gemini-3.1-flash-live-preview)
-  const sttTts = useVoiceChat({ onTurnComplete: handleTurnComplete });
-  const live = useGeminiLive({ onTurnComplete: handleTurnComplete, voiceName: liveVoiceName });
+  const sttTts = useVoiceChat({ onTurnComplete: handleTurnComplete, getSessionId: () => sessionIdRef.current });
+  const live = useGeminiLive({ onTurnComplete: handleTurnComplete, voiceName: liveVoiceName, getSessionId: () => sessionIdRef.current });
 
   const isLiveMode = voiceMode === "live";
 

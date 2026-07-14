@@ -1,5 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveUsageContext } from "@/lib/plan/voiceMode";
+import { estimateCost } from "@/lib/plan/pricing";
 
 export const runtime = "nodejs";
 
@@ -30,7 +32,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "TTS not configured" }, { status: 500 });
   }
 
-  let body: { text?: string; voiceName?: string };
+  let body: { text?: string; voiceName?: string; sessionId?: string };
   try {
     body = await req.json();
   } catch {
@@ -45,6 +47,10 @@ export async function POST(req: NextRequest) {
   if (!ttsText) {
     return NextResponse.json({ error: "text empty after sanitize" }, { status: 400 });
   }
+
+  // 비용에 영향을 주는 child_id/tier/voice_mode는 클라이언트에서 직접 받지 않고
+  // sessionId로만 서버가 해석한다(server-trust). sessionId 미전달 시 로깅만 생략.
+  const usageContext = await resolveUsageContext(body.sessionId);
 
   // voiceName을 안 넘기면 확정된 기본값(ko-KR-Wavenet-A) 사용.
   const voiceName = (typeof body.voiceName === "string" && body.voiceName.trim()) || TTS_VOICE_NAME;
@@ -74,6 +80,27 @@ export async function POST(req: NextRequest) {
     const data = (await gcpRes.json()) as { audioContent?: string };
     if (!data.audioContent) {
       return NextResponse.json({ error: "TTS returned no audio" }, { status: 500 });
+    }
+
+    if (usageContext) {
+      const ctx = usageContext;
+      const charCount = ttsText.length;
+      const estCostKrw = estimateCost({ kind: "tts", charCount });
+      after(async () => {
+        try {
+          const service = createServiceClient();
+          await service.from("usage_events").insert({
+            child_id: ctx.childId,
+            tier: ctx.tier,
+            voice_mode: ctx.voiceMode,
+            kind: "tts",
+            char_count: charCount,
+            est_cost_krw: estCostKrw,
+          });
+        } catch (err) {
+          console.error("[voice/tts] usage_events insert failed:", (err as Error).message);
+        }
+      });
     }
 
     return NextResponse.json({ audioContent: data.audioContent, mimeType: "audio/mp3" });

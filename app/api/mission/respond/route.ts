@@ -1,27 +1,41 @@
 import { NextRequest, NextResponse, after } from "next/server";
-import { GoogleGenAI } from "@google/genai";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { MISSION_CHAT_SYSTEM_PROMPT } from "@/app/api/_lib/prompts";
+import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 
 export const runtime = "nodejs";
 
-// 테스트 단계 비용 절감을 위해 flash-lite로 임시 통일(2026-07-12).
-// 되돌리려면(정식 운영 시 품질 우선): 아래 값을 "gemini-2.5-flash"로 바꾸면 됨 — 2.5-flash로 업그레이드 검토.
-// TODO: 음성 대화 안정화 후 재검토 — 자세한 건 FUTURE_TODO.md 참고.
-const MISSION_CONVERSATION_MODEL_ID = "gemini-flash-lite-latest";
-
 interface HistoryTurn { role: "child" | "k"; text: string }
+
+/** KST(UTC+9) 기준 오늘이 목요일(4) 또는 금요일(5)인지 — 주말 질문을 자연스럽게 꺼낼 요일. */
+function isWeekendQuestionDay(): boolean {
+  const kstDay = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCDay(); // 0=일 ... 4=목, 5=금
+  return kstDay === 4 || kstDay === 5;
+}
+
+const WEEKEND_QUESTION_PROMPT = `
+[오늘의 추가 대화 유도 — 목·금 전용]
+오늘 대화 중 자연스러운 타이밍에 딱 한 번만, 아이에게 이번 주말 계획을 가볍게 물어봐 주세요.
+아래 세 가지 중 하나를 골라 자연스럽게 물어보면 됩니다(전부 다 물어보지 않아도 됨):
+- 이번 주말에 뭐 하고 싶은지
+- 이번 주말에 뭐 먹고 싶은지
+- 부모님과 어떤 외식을 하고 싶은지
+아이가 답한 내용은 이번 주 리포트의 주말 활동 추천에 쓰일 수 있으니, 답을 들으면 짧게 공감해 주세요.
+`.trim();
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const apiKey = process.env.GEMMA_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "GEMMA_API_KEY not configured" }, { status: 500 });
+  const missionModel = await getModelForGroup("B");
+  let ai;
+  try {
+    ai = createGenAIClient(missionModel);
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
 
   let body: { sessionId?: string; history?: HistoryTurn[]; nextQuestionText?: string };
@@ -64,16 +78,16 @@ ${MISSION_CHAT_SYSTEM_PROMPT}
 
 [현재 물어봐야 할 다음 목표 질문]
 ${nextQuestionText}
+${isWeekendQuestionDay() ? `\n${WEEKEND_QUESTION_PROMPT}` : ""}
 `.trim();
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
     const result = await ai.models.generateContent({
-      model: MISSION_CONVERSATION_MODEL_ID,
+      model: missionModel.modelId,
       contents,
       config: {
         systemInstruction: { parts: [{ text: systemInstruction }] },
-        maxOutputTokens: 1024,
+        maxOutputTokens: missionModel.maxOutputTokens ?? 1024,
       },
     });
 
