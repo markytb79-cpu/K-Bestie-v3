@@ -1,7 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { GoogleGenAI } from "@google/genai";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { MISSION_CHAT_SYSTEM_PROMPT } from "@/app/api/_lib/prompts";
+import { resolveUsageContext } from "@/lib/plan/voiceMode";
+import { estimateCost } from "@/lib/plan/pricing";
 
 export const runtime = "nodejs";
 
@@ -22,7 +24,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "GEMMA_API_KEY not configured" }, { status: 500 });
   }
 
-  let body: { history?: HistoryTurn[]; nextQuestionText?: string };
+  let body: { sessionId?: string; history?: HistoryTurn[]; nextQuestionText?: string };
   try {
     body = await req.json();
   } catch {
@@ -40,9 +42,22 @@ export async function POST(req: NextRequest) {
   const contents = history
     .filter((t) => t.text?.trim())
     .map((t) => ({
-      role: t.role === "k" ? "model" : "user",
+      role: t.role === "k" ? ("model" as const) : ("user" as const),
       parts: [{ text: t.text }],
     }));
+
+  // Gemini는 대화가 반드시 user 역할로 시작해야 함(그렇지 않으면 400 Bad Request).
+  // 미션 히스토리는 항상 케이(K)의 오프닝 인사말로 시작하므로 맨 앞의 연속된 model
+  // 턴을 제거해 user 턴부터 시작하도록 보정한다.
+  while (contents.length > 0 && contents[0].role === "model") {
+    contents.shift();
+  }
+
+  // 보정 후에도 비어있으면(이론상 child 발화가 아직 없는 경우) Gemini에 빈 배열을
+  // 보낼 수 없으므로 다음 질문 텍스트 자체를 user 턴으로 넣어 최소 요건을 맞춘다.
+  if (contents.length === 0) {
+    contents.push({ role: "user", parts: [{ text: nextQuestionText }] });
+  }
 
   const systemInstruction = `
 ${MISSION_CHAT_SYSTEM_PROMPT}
@@ -63,6 +78,32 @@ ${nextQuestionText}
     });
 
     const text = (result.text ?? "").trim();
+
+    const tokenIn = result.usageMetadata?.promptTokenCount;
+    const tokenOut = result.usageMetadata?.candidatesTokenCount;
+    if (tokenIn != null && tokenOut != null && body.sessionId) {
+      const sessionId = body.sessionId;
+      after(async () => {
+        try {
+          const ctx = await resolveUsageContext(sessionId);
+          if (!ctx) return;
+          const service = createServiceClient();
+          const estCostKrw = estimateCost({ kind: "llm", tokenIn, tokenOut });
+          await service.from("usage_events").insert({
+            child_id: ctx.childId,
+            tier: ctx.tier,
+            voice_mode: ctx.voiceMode,
+            kind: "llm",
+            token_in: tokenIn,
+            token_out: tokenOut,
+            est_cost_krw: estCostKrw,
+          });
+        } catch (err) {
+          console.error("[mission/respond] usage_events insert failed:", (err as Error).message);
+        }
+      });
+    }
+
     return NextResponse.json({ text });
   } catch (err) {
     console.error("[mission/respond] error:", (err as Error).message);

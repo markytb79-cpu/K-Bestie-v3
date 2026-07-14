@@ -34,6 +34,13 @@ function encodePCM16Base64(chunks: Uint8Array[]): string {
   return btoa(binary);
 }
 
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
 export function useVoiceChat(options?: UseVoiceChatOptions) {
   const [status, setStatus] = useState<SessionStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +58,12 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const micEnabledRef = useRef(true);
   const speakingRef = useRef(false);
-  const audioElRef = useRef<HTMLAudioElement | null>(null);
+  // 케이 발화(TTS) 재생 전용 AudioContext — 세션 시작(마이크 켜기, 사용자 인터랙션) 시점에
+  // 1회 생성/resume해두고 이후 모든 턴이 이 컨텍스트에서 디코딩·재생한다(useGeminiLive.ts와
+  // 동일 패턴). 매 턴 new Audio().play()로 새로 재생을 시도하면 사용자 제스처와 무관한
+  // 시점의 호출이라 두 번째 턴부터 브라우저 Autoplay 정책에 막혀 조용히 실패했었음.
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   const chunksRef = useRef<Uint8Array[]>([]);
   const hasSpeechRef = useRef(false);
@@ -79,10 +91,11 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
   async function callStt(audioBase64: string): Promise<string> {
     try {
+      const sessionId = options?.getSessionId?.() ?? null;
       const res = await fetch("/api/mission/stt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioBase64 }),
+        body: JSON.stringify({ audioBase64, sessionId }),
       });
       if (!res.ok) return "";
       const data = await res.json();
@@ -129,6 +142,15 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true },
       });
       micStreamRef.current = stream;
+
+      // 마이크 켜기(사용자 제스처로 시작된 세션)와 같은 시점에 재생용 AudioContext를
+      // 만들어두어야 브라우저 Autoplay 정책상 이후 턴들의 speak() 재생도 허용된다.
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioContext();
+      }
+      if (audioCtxRef.current.state === "suspended") {
+        await audioCtxRef.current.resume().catch(() => {});
+      }
 
       const inputCtx = new AudioContext({ sampleRate: 16000 });
       inputCtxRef.current = inputCtx;
@@ -199,9 +221,13 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     inputCtxRef.current = null;
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
     micStreamRef.current = null;
-    if (audioElRef.current) {
-      audioElRef.current.pause();
-      audioElRef.current = null;
+    if (currentSourceRef.current) {
+      try { currentSourceRef.current.stop(); } catch { /* 이미 정지된 경우 무시 */ }
+      currentSourceRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
     }
     chunksRef.current = [];
     hasSpeechRef.current = false;
@@ -254,12 +280,9 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     const epoch = ++speakEpochRef.current;
 
     // 이전에 재생 중이던 오디오가 있으면 즉시 중단(겹침 방지)
-    if (audioElRef.current) {
-      try {
-        audioElRef.current.pause();
-        audioElRef.current.currentTime = 0;
-      } catch { /* 이미 정지된 경우 무시 */ }
-      audioElRef.current = null;
+    if (currentSourceRef.current) {
+      try { currentSourceRef.current.stop(); } catch { /* 이미 정지된 경우 무시 */ }
+      currentSourceRef.current = null;
     }
 
     speakingRef.current = true;
@@ -268,10 +291,11 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     let ttsOk = false; // TTS 합성 자체가 성공했는지(목소리 테스트 성공/실패 판정용)
 
     try {
+      const sessionId = options?.getSessionId?.() ?? null;
       const res = await fetch("/api/voice/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(voiceName ? { text: trimmed, voiceName } : { text: trimmed }),
+        body: JSON.stringify(voiceName ? { text: trimmed, voiceName, sessionId } : { text: trimmed, sessionId }),
       });
       console.log("[MISSION-DEBUG] /api/voice/tts status:", res.status);
       if (epoch !== speakEpochRef.current) { console.log("[MISSION-DEBUG] speak() epoch superseded, discarding tts response"); return false; }
@@ -288,10 +312,20 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       }
       ttsOk = true;
 
-      const audio = new Audio(`data:${data.mimeType ?? "audio/mp3"};base64,${data.audioContent}`);
-      if (epoch !== speakEpochRef.current) return false; // 오디오 객체 생성 사이에 또 새 speak()가 호출된 경우 대비
+      const audioCtx = audioCtxRef.current;
+      if (!audioCtx) throw new Error("AudioContext not initialized — startSession()이 선행되어야 함");
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume().catch(() => {});
+      }
 
-      audioElRef.current = audio;
+      const arrayBuffer = base64ToArrayBuffer(data.audioContent);
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      if (epoch !== speakEpochRef.current) return false; // 디코딩 사이에 또 새 speak()가 호출된 경우 대비
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioCtx.destination);
+      currentSourceRef.current = source;
 
       // 음성 재생 개시 시점에 맞추어 자막 출력
       appendTurn({ role: "k", text: trimmed });
@@ -299,9 +333,13 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       spoken = true;
 
       await new Promise<void>((resolve) => {
-        audio.onended = () => resolve();
-        audio.onerror = () => resolve();
-        audio.play().catch((e) => { console.error("[MISSION-DEBUG] audio.play() rejected:", e); resolve(); });
+        source.onended = () => resolve();
+        try {
+          source.start();
+        } catch (e) {
+          console.error("[MISSION-DEBUG] source.start() threw:", e);
+          resolve();
+        }
       });
     } catch (err) {
       console.error("[MISSION-DEBUG] speak() caught exception:", err, "voice:", voiceName);
@@ -314,7 +352,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       if (epoch === speakEpochRef.current) {
         speakingRef.current = false;
         setIsSpeaking(false);
-        audioElRef.current = null;
+        currentSourceRef.current = null;
       }
     }
     return ttsOk;
