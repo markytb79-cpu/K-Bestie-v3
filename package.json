@@ -7,7 +7,8 @@
     "dev:https": "next dev --turbopack --experimental-https --experimental-https-key ./192.168.200.222+2-key.pem --experimental-https-cert ./192.168.200.222+2.pem --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "tsx --test lib/mission/missionCompletionFlow.test.ts lib/stt/scriptGuard.test.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^8.3.1",
@@ -29,6 +30,7 @@
     "eslint": "^9",
     "eslint-config-next": "^15.3.3",
     "tailwindcss": "^4",
+    "tsx": "^4.19.0",
     "typescript": "^5"
   }
 }

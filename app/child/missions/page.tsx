@@ -9,6 +9,7 @@ import { RealChildNav } from "@/components/RealChildNav";
 import { useVoiceChat, type Turn } from "@/hooks/useVoiceChat";
 import { useGeminiLive } from "@/hooks/useGeminiLive";
 import { SkeletonBox } from "@/components/Skeleton";
+import { MissionCompletionController, type MissionCompletionState } from "@/lib/mission/missionCompletionFlow";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -25,11 +26,52 @@ type QuestionState = "pending" | "answered" | "skipped" | "refused";
 
 const REQUIRED_COUNT = 5;
 
-// ⚠️⚠️⚠️ 임시 테스트용 우회 (TEMP TEST BYPASS) ⚠️⚠️⚠️
-// 운영시간 게이트를 항상 통과시켜 시간과 무관하게 미션 테스트 가능하게 함.
-// 되돌리려면(=원래 운영시간 제한 복원) 아래 값을 false로 바꾸면 됨.
-// 게이트 로직(getKstHour/currentRound) 자체는 삭제하지 않고 그대로 둠 — 우회는 사용 지점에서만 적용.
-const BYPASS_MISSION_TIME_GATE_FOR_TESTING = true;
+// 미션 종료 시 케이가 정확히 말해야 하는 문구 — 5번째 유효 답변이 확정된 직후 Live 세션에
+// 전용 종료 발화(live.speakClosingLine)로 이 문장을 보내 케이가 이것만 말하고 끝내게 한다.
+const MISSION_CLOSING_LINE = "오늘의 미션을 모두 완료했어! 황금열쇠를 받았어. 내일 또 만나자!";
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+// 종료 문구 TTS 폴백 재생 — Live 세션 음성이 종료 발화를 못 낸 경우(2.5초 타임아웃/텍스트만)
+// Tier1/2와 동일한 /api/voice/tts 경로로 종료 문구를 합성해 재생한다. useVoiceChat.speak()를
+// 재사용하지 않는 이유: 그 훅의 AudioContext는 자체 startSession()에서만 초기화되는데 Live
+// 모드에선 그게 실행되지 않아 "AudioContext not initialized" 폴백(텍스트만)으로 빠져 버그①을
+// 다른 경로로 재현하기 때문. 여기서는 이 재생 전용의 새 AudioContext를 만들어 쓴다.
+async function playClosingLineViaTts(text: string, sessionId: string | null): Promise<void> {
+  let ctx: AudioContext | null = null;
+  try {
+    const res = await fetch("/api/voice/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, sessionId }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.audioContent) return;
+    ctx = new AudioContext();
+    const audioBuffer = await ctx.decodeAudioData(base64ToArrayBuffer(data.audioContent));
+    const source = ctx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(ctx.destination);
+    await new Promise<void>((resolve) => {
+      source.onended = () => resolve();
+      try { source.start(); } catch { resolve(); }
+    });
+  } catch {
+    // 합성/재생 실패해도 자막은 이미 표시됐으므로 조용히 종료
+  } finally {
+    ctx?.close().catch(() => {});
+  }
+}
+
+// 운영시간 게이트 on/off는 서버 환경변수 CHILD_TIME_RESTRICTIONS_ENABLED로 제어한다
+// (/api/config/child-time-restrictions 참고) — 게이트 로직(getKstHour/currentRound) 자체는
+// 그대로 유지하고, 적용 여부만 이 스위치로 결정한다.
 
 // 운영시간 게이트 (KST)
 function getKstHour(): number {
@@ -54,7 +96,10 @@ function MissionInner() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<MissionQuestion[]>([]);
   const [gauge, setGauge] = useState(0);
-  const [completed, setCompleted] = useState(false);
+  // active → completing → completed (자세한 전이 규칙은 lib/mission/missionCompletionFlow.ts 참고).
+  // completing부터 이미 100% 취급(마이크·입력 비활성화) — completed와의 차이는 "종료 발화가
+  // 아직 재생 중인지"뿐이다.
+  const [missionState, setMissionState] = useState<MissionCompletionState>("active");
   const [mode, setMode] = useState<"voice" | "text">("voice");
   const [textInput, setTextInput] = useState("");
   // 요금제(tier)별 음성 방식 — /api/mission/start 응답으로 확정됨. 확정 전까지 null(로딩).
@@ -64,18 +109,27 @@ function MissionInner() {
   const [liveVoiceName, setLiveVoiceName] = useState<string>("Achernar");
 
   const sessionIdRef = useRef<string | null>(null);
+  const childIdRef = useRef<string | null>(null);
+  childIdRef.current = childId;
   const voiceModeRef = useRef<VoiceMode | null>(null);
   voiceModeRef.current = voiceMode;
   const questionsRef = useRef<MissionQuestion[]>([]);
   const currentIndexRef = useRef(0);
   const questionStatesRef = useRef<Record<string, QuestionState>>({});
   const askedIndexRef = useRef<number>(-1);
-  const completedRef = useRef(false);
+  const missionStateRef = useRef<MissionCompletionState>("active");
+  // 종료 문구 TTS 폴백이 중복 실행되지 않도록 하는 가드(컨트롤러의 closingFinished 위에 얹는
+  // 이중 방어) — onClosingAudioTimeout이 어떤 이유로든 두 번 불려도 재생/저장은 1회만.
+  const closingFallbackFiredRef = useRef(false);
+  const missionControllerRef = useRef<MissionCompletionController | null>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
   // askQuestion은 훅 생성 이후에만 얻을 수 있어 ref로 우회
   // (handleTurnComplete는 훅 생성 전에 정의되어야 하므로 직접 참조 불가)
   const askQuestionRef = useRef<((idx: number, customText?: string) => void) | undefined>(undefined);
   const getTranscriptRef = useRef<(() => Turn[]) | undefined>(undefined);
+  // handleTurnComplete가 useGeminiLive(live) 생성보다 먼저 정의돼야 해서(훅에 콜백으로 넘김),
+  // live.lockNow()/speakClosingLine()을 직접 참조할 수 없다 — ref로 우회.
+  const liveRef = useRef<ReturnType<typeof useGeminiLive> | null>(null);
   // 스크롤백용 — DB(chat_messages)에서 불러온 과거 대화. 세션이 live가 된 직후 1회만
   // transcript에 채워넣는다(그 전에 넣으면 startSession()이 비워버림).
   const pastMessagesRef = useRef<Turn[]>([]);
@@ -118,7 +172,9 @@ function MissionInner() {
   const handleTurnComplete = useCallback((turn: Turn) => {
     saveMessage(turn.role, turn.text);
 
-    if (turn.role !== "child" || completedRef.current) return;
+    // missionState !== "active"면(completing/completed) 그 이후의 아이 발화는 전부 무시한다
+    // — 100% 이후 들어오는 사용자 입력을 미션 판정 로직에 태우지 않기 위함.
+    if (turn.role !== "child" || missionStateRef.current !== "active") return;
 
     const qs = questionsRef.current;
     const idx = currentIndexRef.current;
@@ -139,8 +195,24 @@ function MissionInner() {
         setGauge(data.validAnswerCount ?? 0);
 
         if (data.completed) {
-          completedRef.current = true;
-          setCompleted(true);
+          // 5번째 유효 답변 확정 — 여기서 곧바로 세션을 끊지 않는다(케이가 아직 종료 발화를
+          // 하는/할 중일 수 있음). Live 모드는 별도 종료 플로우(missionCompletionFlow)가
+          // "종료 발화의 turnComplete + 오디오 재생 완료 + 700ms" 이후에만 세션을 닫는다.
+          // 일반 후속 질문 큐(pickNextIndex/askQuestion)는 절대 실행하지 않는다.
+          if (voiceModeRef.current === "live") {
+            // 순서 중요: 먼저 lockNow()로 5번째 답변 턴의 잔여 오디오/추가 질문을 즉시 차단하고,
+            // 종료 플로우를 start()로 무장시킨 뒤, speakClosingLine()으로 전용 종료 발화를 보낸다.
+            // (예전엔 종료 지시를 5번째 질문 텍스트에 심어, 종료 발화가 답변 턴의 연속으로 이미
+            //  다 재생된 뒤에야 락이 걸려 "음성 없이 텍스트만" 버그가 났었다.)
+            liveRef.current?.lockNow();
+            missionControllerRef.current?.start();
+            liveRef.current?.speakClosingLine(MISSION_CLOSING_LINE);
+          } else {
+            // STT/TTS(Tier1/2) 경로는 연속 스트리밍 세션이 아니라 매 발화가 개별 TTS
+            // 호출로 끝나므로 기존의 단순 즉시 종료 방식을 그대로 유지한다.
+            missionStateRef.current = "completed";
+            setMissionState("completed");
+          }
           return;
         }
 
@@ -185,13 +257,77 @@ function MissionInner() {
   // - stt_tts (Tier1/2): GCP STT(주기호출) + Wavenet-A TTS
   // - live (Tier3): Gemini Live API 네이티브 오디오(gemini-3.1-flash-live-preview)
   const sttTts = useVoiceChat({ onTurnComplete: handleTurnComplete, getSessionId: () => sessionIdRef.current });
-  const live = useGeminiLive({ onTurnComplete: handleTurnComplete, voiceName: liveVoiceName, getSessionId: () => sessionIdRef.current });
+  const live = useGeminiLive({
+    onTurnComplete: handleTurnComplete,
+    voiceName: liveVoiceName,
+    sttMode: "gcp",
+    getSessionId: () => sessionIdRef.current,
+    getChildId: () => childIdRef.current,
+    onServerTurnComplete: () => {
+      if (missionControllerRef.current?.getState() === "completing") {
+        missionControllerRef.current.notifyTurnComplete();
+      }
+    },
+    onAudioQueueDrained: () => {
+      if (missionControllerRef.current?.getState() === "completing") {
+        missionControllerRef.current.notifyAudioDrained();
+      }
+    },
+    onClosingAudioChunk: () => {
+      if (missionControllerRef.current?.getState() === "completing") {
+        missionControllerRef.current.notifyClosingAudioStarted();
+      }
+    },
+    // gcp STT 전사가 외국 문자로 판정돼 채택 불가한 경우 — 아이에게 다시 말해달라 재질문.
+    // speakAsK는 미션 흐름(askedIndex/currentIndex)을 건드리지 않고 문장만 재생한다.
+    onTranscriptRejected: () => {
+      live.speakAsK("잘 못 들었어. 다시 한번 말해줄래?");
+    },
+  });
+  liveRef.current = live;
+
+  // 미션 종료 플로우 컨트롤러 — Live 모드 전용, 최초 1회만 생성(이후 렌더에서는 그대로 재사용).
+  if (!missionControllerRef.current) {
+    missionControllerRef.current = new MissionCompletionController({
+      onStateChange: (s) => {
+        missionStateRef.current = s;
+        setMissionState(s);
+        // completing 진입 즉시 마이크·추가 입력 차단(방어적 이중 조치 — UI도 isDone 기준으로
+        // 버튼을 감춘다). 종료 발화는 이미 진행 중인 세션을 통해 계속 재생된다.
+        if (s === "completing") liveRef.current?.setMicEnabled(false);
+      },
+      // fallback/외부 종료 경로 전용 — 정상 경로는 케이 본인의 발화가 이미 화면에 떠 있다.
+      onShowCompletionText: () => {
+        liveRef.current?.appendTurn({ role: "k", text: MISSION_CLOSING_LINE });
+      },
+      onCloseSession: () => {
+        liveRef.current?.stopSession();
+      },
+      // 실제 황금열쇠 지급/미션 완료 저장은 /api/mission/answer가 서버에서 이미 멱등하게
+      // 처리했다(valid_answer_count 최초 5 달성 시점에만 적립) — 여기서는 클라이언트
+      // 오케스트레이션이 정확히 1회만 이 경로를 타는지 로깅만 한다.
+      onGrantReward: () => {
+        console.log("[MissionFlow] reward already granted server-side (idempotent) — client ack");
+      },
+      // Live 종료 발화 음성이 2.5초 안에 시작되지 않았거나 텍스트만으로 끝난 경우 —
+      // 종료 문구를 별도 TTS(/api/voice/tts)로 합성·재생하고 자막/DB에도 정확히 1회 반영한다.
+      onClosingAudioTimeout: async () => {
+        if (closingFallbackFiredRef.current) return;
+        closingFallbackFiredRef.current = true;
+        liveRef.current?.appendTurn({ role: "k", text: MISSION_CLOSING_LINE });
+        saveMessage("k", MISSION_CLOSING_LINE);
+        await playClosingLineViaTts(MISSION_CLOSING_LINE, sessionIdRef.current);
+      },
+      onLog: (event, fields) => console.log(`[MissionFlow] ${event}`, fields ?? {}),
+    });
+  }
 
   const isLiveMode = voiceMode === "live";
 
   const voice = isLiveMode
     ? {
         status: live.status as string,
+        error: live.error,
         transcript: live.transcript,
         interimChildText: live.interimChildText,
         startSession: live.startSession,
@@ -203,6 +339,7 @@ function MissionInner() {
       }
     : {
         status: sttTts.status as string,
+        error: sttTts.error,
         transcript: sttTts.transcript,
         interimChildText: sttTts.interimChildText,
         startSession: sttTts.startSession,
@@ -220,6 +357,8 @@ function MissionInner() {
     if (!q) return;
     askedIndexRef.current = idx;
     const textToSpeak = customText || q.question_text;
+    // 마지막(5번째) 질문에도 종료 지시를 텍스트에 심지 않는다 — 종료 발화는 답변 확정 후
+    // 별도의 speakClosingLine() 전용 턴으로 처리한다(handleTurnComplete의 completed 분기).
     if (isLiveMode) {
       live.speakAsK(textToSpeak);
     } else {
@@ -260,19 +399,34 @@ function MissionInner() {
     }
     setChildId(cid);
 
-    const hour = getKstHour();
-    const qpRound = searchParams.get("roundType") as RoundType | null;
-    // ⚠️ TEMP TEST BYPASS: BYPASS_MISSION_TIME_GATE_FOR_TESTING가 true면 게이트 결과가 null이어도
-    // "common" 라운드로 대체해 항상 통과시킴. 원복하려면 파일 상단 플래그를 false로.
-    const round: RoundType | null =
-      qpRound ?? currentRound(hour) ?? (BYPASS_MISSION_TIME_GATE_FOR_TESTING ? "common" : null);
-    if (!round) {
-      setPhase("closed");
-      return;
-    }
-
     let cancelled = false;
     (async () => {
+      const hour = getKstHour();
+      const qpRound = searchParams.get("roundType") as RoundType | null;
+
+      // 운영시간 게이트 on/off — 서버 환경변수 CHILD_TIME_RESTRICTIONS_ENABLED로 제어(기본 true=
+      // 기존 제한 정상 적용). false면 게이트 결과가 null이어도 "common" 라운드로 대체해 언제든
+      // 미션을 시작할 수 있게 한다. 게이트 로직(getKstHour/currentRound) 자체는 그대로 유지 —
+      // 이 스위치는 "적용 여부"만 바꾼다. 조회 실패 시 안전하게 기존 제한(true)을 유지한다.
+      let timeRestrictionsEnabled = true;
+      try {
+        const cfgRes = await fetch("/api/config/child-time-restrictions");
+        if (cfgRes.ok) {
+          const cfg = await cfgRes.json();
+          if (typeof cfg.enabled === "boolean") timeRestrictionsEnabled = cfg.enabled;
+        }
+      } catch {
+        // 조회 실패 — 기본값(true, 기존 제한 유지)으로 안전하게 진행
+      }
+      if (cancelled) return;
+
+      const round: RoundType | null =
+        qpRound ?? currentRound(hour) ?? (!timeRestrictionsEnabled ? "common" : null);
+      if (!round) {
+        setPhase("closed");
+        return;
+      }
+
       try {
         const res = await fetch("/api/mission/start", {
           method: "POST",
@@ -361,16 +515,28 @@ function MissionInner() {
   // 답변 처리 완료 시점에 askQuestionRef를 통해 직접 트리거된다(ref 변화는 effect를
   // 재실행시키지 않으므로, "다음 질문"을 이 effect가 알아채길 기다리면 안 됨).
   useEffect(() => {
-    if (voice.status !== "live" || completed) return;
+    if (voice.status !== "live" || missionState !== "active") return;
     if (askedIndexRef.current !== -1) return;
     askQuestion(currentIndexRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voice.status, completed, askQuestion]);
+  }, [voice.status, missionState, askQuestion]);
 
+  // STT/TTS(Tier1/2) 경로 전용 — Live 모드는 missionCompletionFlow 컨트롤러(onCloseSession)가
+  // 종료 발화 재생까지 기다린 뒤에만 stopSession()을 호출하므로 여기서 다루지 않는다.
   useEffect(() => {
-    if (completed) voice.stopSession();
+    if (!isLiveMode && missionState === "completed") voice.stopSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completed]);
+  }, [missionState, isLiveMode]);
+
+  // WebSocket 조기 종료 감지 — completing(종료 발화 대기 중)인데 세션이 스스로 끊긴 경우
+  // (서버 오류/네트워크 단절 등), 8초 fallback을 다 기다리지 않고 즉시 완료 처리한다.
+  useEffect(() => {
+    if (!isLiveMode || missionState !== "completing") return;
+    if (live.status === "ended" || live.status === "error") {
+      missionControllerRef.current?.notifySessionClosedExternally();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live.status, missionState, isLiveMode]);
 
   useEffect(() => {
     bubbleRef.current?.scrollTo({ top: bubbleRef.current.scrollHeight, behavior: "smooth" });
@@ -439,9 +605,31 @@ function MissionInner() {
     );
   }
 
+  // 음성 세션 자체가 끊긴 경우(예: Vertex Live 연결 실패) — 기술 오류 문구 대신
+  // voice.error에 담긴 아이용 안내 문구만 보여준다(Plan7 §2, fallback 없음).
+  if (voice.status === "error") {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "#fafaf8" }}>
+        <p className="text-5xl">🌙</p>
+        <p className="text-sm font-bold text-gray-700 whitespace-pre-line leading-relaxed">
+          {voice.error || "지금은 케이와 대화를 시작하기 어려워요.\n잠시 후 다시 만나자."}
+        </p>
+        <button
+          onClick={() => router.replace("/child/home")}
+          className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
+          style={{ background: "#1a6b5a" }}
+        >
+          홈으로 돌아가기
+        </button>
+      </div>
+    );
+  }
+
   const isConnecting = voice.status === "connecting";
   const isLive = voice.status === "live";
-  const isDone = completed || gauge >= REQUIRED_COUNT;
+  // completing 단계부터 이미 100%/완료 취급(마이크·입력 비활성화) — completed와의 차이는
+  // "종료 발화가 아직 재생 중인지"뿐이라 화면 표시상 구분할 필요가 없다.
+  const isDone = missionState !== "active" || gauge >= REQUIRED_COUNT;
   const missionPercent = Math.min(gauge * 20, 100);
 
   return (
@@ -466,7 +654,13 @@ function MissionInner() {
             {isDone ? "오늘의 미션을 완료했어요!" : isConnecting ? "케이를 부르는 중이에요…" : "케이가 듣고 있어요…"}
           </h1>
           <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
-            {isDone ? "황금열쇠를 받았어요. 내일 또 만나요! 🔑" : "질문에 편하게 대답해 보세요"}
+            {/* missionState==="completed"(종료 발화+700ms 대기까지 실제로 끝난 시점)일 때만
+                정확한 완료 안내 문구를 표시 — completing 중엔 기존 문구 그대로 유지. */}
+            {missionState === "completed"
+              ? MISSION_CLOSING_LINE
+              : isDone
+              ? "황금열쇠를 받았어요. 내일 또 만나요! 🔑"
+              : "질문에 편하게 대답해 보세요"}
           </p>
 
           <div className="px-6 mt-3">
