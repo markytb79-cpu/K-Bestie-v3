@@ -1095,7 +1095,6 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
   const reset = useCallback(() => {
     teardown();
-    interactionModeRef.current = "auto";
     transcriptRef.current = [];
     setTranscript([]);
     setError(null);

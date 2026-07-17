@@ -854,7 +854,7 @@ function MissionInner() {
           />
         </div>
 
-        {isLive && !isDone && (
+        {isLiveMode && !isDone && (
           <div className="flex justify-center mb-4 shrink-0">
             <div className="inline-flex items-center gap-1.5 p-1 bg-gray-100 rounded-full border border-gray-200 shadow-inner">
               <button
