@@ -177,6 +177,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   //  WebAudio API로 재생하는 오디오를 AEC 기준 신호로 못 잡는 경우가 있어 반드시 필요).
   const kSpeakingRef = useRef(false);
 
+  // GCP STT 비동기 확정(finalizing) 상태 추적을 위한 Ref
+  const manualFinalizingRef = useRef<boolean>(false);
+
   // 로컬 STT fallback 관리 변수
   const recognitionRef = useRef<any>(null);
   const speechHistoryRef = useRef<string>("");
@@ -470,24 +473,35 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     childAudioChunksRef.current = [];
 
     void (async () => {
-      let finalText: string | null;
-      if (chunks.length > 0) {
-        // base64는 1회만 계산해두고 최대 2회까지 POST(resolveFinalTranscript의 재시도용).
-        const audioBase64 = concatChunksToBase64(chunks);
-        const sessionId = getSessionIdRef.current?.() ?? null;
-        finalText = await resolveFinalTranscript(() => postMissionStt(audioBase64, sessionId), fallbackText);
-      } else {
-        finalText = validateFinalTranscript(fallbackText); // 오디오가 아예 없던 경우도 동일 검증 경로를 거친다
-      }
+      try {
+        let finalText: string | null;
+        if (chunks.length > 0) {
+          // base64는 1회만 계산해두고 최대 2회까지 POST(resolveFinalTranscript의 재시도용).
+          const audioBase64 = concatChunksToBase64(chunks);
+          const sessionId = getSessionIdRef.current?.() ?? null;
+          finalText = await resolveFinalTranscript(() => postMissionStt(audioBase64, sessionId), fallbackText);
+        } else {
+          finalText = validateFinalTranscript(fallbackText); // 오디오가 아예 없던 경우도 동일 검증 경로를 거친다
+        }
 
-      if (finalText) {
-        appendTurn({ role: "child", text: finalText });
-        onTurnCompleteRef.current?.({ role: "child", text: finalText });
-      } else {
-        // 어떤 후보도 검증을 통과 못함 — 반영하지 않고, 다음 발화를 다시 받을 수 있게
-        // flush 플래그를 풀고 재질문 요청.
+        if (finalText) {
+          setInterimChildText("");
+          appendTurn({ role: "child", text: finalText });
+          onTurnCompleteRef.current?.({ role: "child", text: finalText });
+        } else {
+          // 어떤 후보도 검증을 통과 못함 — 반영하지 않고, 다음 발화를 다시 받을 수 있게
+          // flush 플래그를 풀고 재질문 요청.
+          setInterimChildText("");
+          childTurnFlushedRef.current = false;
+          onTranscriptRejectedRef.current?.();
+        }
+      } catch (err) {
+        console.error("[GCP STT] Error in flushChildTurn:", err);
+        setInterimChildText("");
         childTurnFlushedRef.current = false;
         onTranscriptRejectedRef.current?.();
+      } finally {
+        manualFinalizingRef.current = false;
       }
     })();
   }
@@ -516,6 +530,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
     childAudioChunksRef.current = [];
     setInterimChildText("");
+    manualFinalizingRef.current = false;
   }
 
   const initSpeechRecognition = useCallback(() => {
@@ -598,6 +613,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     kTurnExpectedTextRef.current = null;
     kTurnLeakDetectedRef.current = false;
     postCompletionLockRef.current = "none";
+    manualFinalizingRef.current = false;
 
     try {
       const childId = getChildIdRef.current?.() ?? null;
@@ -727,6 +743,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         if (inTx) {
           console.log("[K] 📝 child (buf):", inTx);
           pendingChildText += inTx;
+          setInterimChildText(pendingChildText);
 
           // 라이브 전사 성공 시 로컬 STT는 무력화
           hasLiveInputTxRef.current = true;
@@ -787,7 +804,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
             const finalText = finalizeKTurnText(pendingKText);
             onTurnCompleteRef.current?.({ role: "k", text: finalText });
             pendingKText = "";
-            setInterimChildText("");
+            if (!manualFinalizingRef.current) {
+              setInterimChildText("");
+            }
             kTurnExpectedTextRef.current = null;
             kTurnLeakDetectedRef.current = false;
             // childTurnFlushedRef는 여기서 초기화하지 않는다 — 이 K 턴은 오디오 재생이 아직
@@ -807,8 +826,10 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
           kTurnLeakDetectedRef.current = false;
           hasLiveInputTxRef.current = false;
           speechHistoryRef.current = "";
-          setInterimChildText("");
-          childTurnFlushedRef.current = false; // 다음 아이 발화 턴을 위해 리셋
+          if (!manualFinalizingRef.current) {
+            setInterimChildText("");
+            childTurnFlushedRef.current = false; // 다음 아이 발화 턴을 위해 리셋
+          }
 
           onServerTurnCompleteRef.current?.();
           // speakClosingLine()이 보낸 전용 종료 발화 턴이 지금 막 끝났다 — 이 턴까지는
@@ -1193,6 +1214,10 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   }, [status]);
 
   const sendActivityStart = useCallback((): boolean => {
+    if (manualFinalizingRef.current) {
+      console.log("[K] Blocked sendActivityStart because finalizing GCP STT");
+      return false;
+    }
     if (!sessionRef.current || statusRef.current !== "live") return false;
     console.log("[K] 📡 sendActivityStart");
     stopAllScheduledSources();
@@ -1209,6 +1234,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     isChildSpeakingRef.current = false;
     sessionRef.current.sendRealtimeInput({ activityEnd: {} });
     if (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0) {
+      manualFinalizingRef.current = true;
+      setInterimChildText("음성을 인식하고 있어요…");
       flushChildTurn("");
     }
     return true;
