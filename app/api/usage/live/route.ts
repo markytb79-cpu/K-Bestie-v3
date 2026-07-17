@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getVoiceModeForChild } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
+import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 export const runtime = "nodejs";
 
 // POST /api/usage/live { event: "start" | "end", sessionId, tokenIn?, tokenOut? }
 // child_id/tier/voice_mode는 클라이언트가 직접 제공하지 않고 sessionId로 서버가 해석한다(server-trust).
-// start: usage_events(kind='live_audio') row를 ended_at=NULL로 insert.
+// start: usage_events(kind='live_audio') row (ended_at=NULL로 insert)
 // end: 해당 아이의 진행중(ended_at IS NULL) 최신 live_audio row를 duration_sec/ended_at으로 UPDATE.
 //   tokenIn/tokenOut(Gemini usageMetadata 누적치)이 오면 token_in/token_out을 저장하고 공식 단가로 정밀 계산,
 //   없으면 durationSec 기반 추정치로 폴백한다.
@@ -38,6 +39,12 @@ export async function POST(req: NextRequest) {
   if (!session?.child_id) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
+
+  const authCheck = await requireChildAccess(supabase, user.id, session.child_id);
+  if (!authCheck.allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const childId = session.child_id;
 
   if (event === "start") {

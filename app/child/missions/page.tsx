@@ -24,8 +24,6 @@ interface MissionQuestion {
 
 type QuestionState = "pending" | "answered" | "skipped" | "refused";
 
-const REQUIRED_COUNT = 5;
-
 // 미션 종료 시 케이가 정확히 말해야 하는 문구 — 5번째 유효 답변이 확정된 직후 Live 세션에
 // 전용 종료 발화(live.speakClosingLine)로 이 문장을 보내 케이가 이것만 말하고 끝내게 한다.
 const MISSION_CLOSING_LINE = "오늘의 미션을 모두 완료했어! 황금열쇠를 받았어. 내일 또 만나자!";
@@ -96,6 +94,10 @@ function MissionInner() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<MissionQuestion[]>([]);
   const [gauge, setGauge] = useState(0);
+  const [progressPercent, setProgressPercent] = useState(0);
+  const [requiredCount, setRequiredCount] = useState(5);
+  const [completed, setCompleted] = useState(false);
+  const [engineVersion, setEngineVersion] = useState("v1");
   // active → completing → completed (자세한 전이 규칙은 lib/mission/missionCompletionFlow.ts 참고).
   // completing부터 이미 100% 취급(마이크·입력 비활성화) — completed와의 차이는 "종료 발화가
   // 아직 재생 중인지"뿐이다.
@@ -118,6 +120,14 @@ function MissionInner() {
   const questionStatesRef = useRef<Record<string, QuestionState>>({});
   const askedIndexRef = useRef<number>(-1);
   const missionStateRef = useRef<MissionCompletionState>("active");
+  // Live 모드 전용 미션 턴 상태머신 — awaiting_child(아이 답변 대기) → processing_answer(답변
+  // 판정/다음 질문 생성 중) → speaking_k(케이가 말하는 중) → awaiting_child. handleTurnComplete의
+  // 재진입 가드와 onAudioQueueDrained의 복귀 신호가 이 상태를 관리한다(STT/TTS 모드는 기존
+  // 동작을 그대로 유지하며 이 상태를 사용하지 않음).
+  const turnPhaseRef = useRef<"awaiting_child" | "processing_answer" | "speaking_k">("awaiting_child");
+  // 유효한 아이 답변 턴마다 1씩 증가 — /api/mission/answer, /api/mission/respond에 함께
+  // 실어 보내 서버가 같은 턴에 대한 중복 요청을 식별할 수 있게 하는 idempotency key 재료.
+  const childTurnSeqRef = useRef(0);
   // 종료 문구 TTS 폴백이 중복 실행되지 않도록 하는 가드(컨트롤러의 closingFinished 위에 얹는
   // 이중 방어) — onClosingAudioTimeout이 어떤 이유로든 두 번 불려도 재생/저장은 1회만.
   const closingFallbackFiredRef = useRef(false);
@@ -176,23 +186,66 @@ function MissionInner() {
     // — 100% 이후 들어오는 사용자 입력을 미션 판정 로직에 태우지 않기 위함.
     if (turn.role !== "child" || missionStateRef.current !== "active") return;
 
+    // Live 모드 전용 재진입 가드 — 케이가 아직 말하는 중(speaking_k)이거나 직전 답변을
+    // 아직 처리 중(processing_answer)이면, 강제컷 직후 지연 도착한 STT 결과 등으로 인한
+    // 동일/추가 child 턴을 무시한다(중복 /api/mission/answer·respond 호출 방지).
+    const isLive = voiceModeRef.current === "live";
+    if (isLive) {
+      if (turnPhaseRef.current !== "awaiting_child") return;
+      turnPhaseRef.current = "processing_answer";
+    }
+
     const qs = questionsRef.current;
     const idx = currentIndexRef.current;
     const question = qs[idx];
     const sid = sessionIdRef.current;
-    if (!question || !sid) return;
+    if (!question || !sid) {
+      if (isLive) turnPhaseRef.current = "awaiting_child";
+      return;
+    }
+
+    // 이번 아이 답변 턴의 idempotency key 재료 — 서버가 같은 턴에 대한 중복 요청을
+    // 식별할 수 있도록 /api/mission/answer, /api/mission/respond에 함께 실어 보낸다.
+    const childTurnId = `${sid}:${question.id}:${++childTurnSeqRef.current}`;
 
     void (async () => {
       try {
         const res = await fetch("/api/mission/answer", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: sid, questionId: question.id, answerText: turn.text }),
+          body: JSON.stringify({ sessionId: sid, questionId: question.id, answerText: turn.text, childTurnId }),
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (res.status === 423) {
+            // 이미 완료되었거나 안전 중단된 경우 대화 차단
+            missionStateRef.current = "completed";
+            setMissionState("completed");
+            if (isLive) {
+              liveRef.current?.lockNow();
+            }
+            return;
+          }
+          if (isLive) turnPhaseRef.current = "awaiting_child";
+          return;
+        }
         const data = await res.json();
+        
+        if (data.reason === "safety_signal" || data.status === "SAFETY_PAUSED") {
+          // 안전 중단 처리: 다음 질문으로 넘어가지 않고 멈춤
+          missionStateRef.current = "completed"; // UI 비활성화를 위해 completed 처리
+          setMissionState("completed");
+          if (isLive) {
+            liveRef.current?.lockNow();
+          }
+          return;
+        }
+
         questionStatesRef.current = data.questionStates ?? questionStatesRef.current;
         setGauge(data.validAnswerCount ?? 0);
+        setProgressPercent(data.progressPercent ?? 0);
+        setRequiredCount(data.requiredCount ?? 5);
+        setCompleted(data.completed ?? false);
+        setEngineVersion(data.engine_version ?? "v1");
 
         if (data.completed) {
           // 5번째 유효 답변 확정 — 여기서 곧바로 세션을 끊지 않는다(케이가 아직 종료 발화를
@@ -204,6 +257,7 @@ function MissionInner() {
             // 종료 플로우를 start()로 무장시킨 뒤, speakClosingLine()으로 전용 종료 발화를 보낸다.
             // (예전엔 종료 지시를 5번째 질문 텍스트에 심어, 종료 발화가 답변 턴의 연속으로 이미
             //  다 재생된 뒤에야 락이 걸려 "음성 없이 텍스트만" 버그가 났었다.)
+            turnPhaseRef.current = "speaking_k";
             liveRef.current?.lockNow();
             missionControllerRef.current?.start();
             liveRef.current?.speakClosingLine(MISSION_CLOSING_LINE);
@@ -217,45 +271,55 @@ function MissionInner() {
         }
 
         const next = pickNextIndex(questionStatesRef.current);
-        if (next === -1) return;
+        if (next === -1) {
+          if (isLive) turnPhaseRef.current = "awaiting_child";
+          return;
+        }
 
         currentIndexRef.current = next;
 
-        // 다음 질문 유도 멘트 동적 생성 및 폴백
+        // 다음 질문 유도 멘트 동적 생성 및 폴백 — askQuestionRef는 정확히 1회만 호출한다.
         const nextQ = questionsRef.current[next];
-        if (nextQ) {
-          try {
-            const respondRes = await fetch("/api/mission/respond", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                sessionId: sessionIdRef.current,
-                history: getTranscriptRef.current?.() ?? [],
-                nextQuestionText: nextQ.question_text,
-              }),
-            });
-            if (respondRes.ok) {
-              const respondData = await respondRes.json();
-              if (respondData.text) {
-                askQuestionRef.current?.(next, respondData.text);
-                return;
-              }
-            }
-          } catch {
-            // 실패 시 아래 순정 질문 텍스트로 폴백
-          }
-          askQuestionRef.current?.(next);
+        if (!nextQ) {
+          if (isLive) turnPhaseRef.current = "awaiting_child";
+          return;
         }
+
+        let respondText: string | undefined;
+        try {
+          const respondRes = await fetch("/api/mission/respond", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId: sessionIdRef.current,
+              history: getTranscriptRef.current?.() ?? [],
+              nextQuestionText: nextQ.question_text,
+              childTurnId,
+            }),
+          });
+          if (respondRes.ok) {
+            const respondData = await respondRes.json();
+            if (respondData.text) respondText = respondData.text;
+          }
+        } catch {
+          // 실패 시 아래 askQuestionRef가 순정 질문 텍스트(customText 없음)로 폴백
+        }
+        if (isLive) turnPhaseRef.current = "speaking_k";
+        askQuestionRef.current?.(next, respondText);
       } catch {
-        // 에러 시 재시도
+        if (isLive) turnPhaseRef.current = "awaiting_child";
       }
     })();
   }, [saveMessage, pickNextIndex]);
 
-  // 두 음성 백엔드를 항상 함께 마운트해두고(리액트 훅 규칙상 조건부 호출 불가),
-  // voiceMode(tier)에 따라 실제로 사용하는 쪽만 startSession되도록 분기한다.
-  // - stt_tts (Tier1/2): GCP STT(주기호출) + Wavenet-A TTS
-  // - live (Tier3): Gemini Live API 네이티브 오디오(gemini-3.1-flash-live-preview)
+  // 자동·수동 발화 상태 및 DOM 조작을 위한 Ref 선언
+  const [isAuto, setIsAuto] = useState(true);
+  const [isRecording, setIsRecording] = useState(false);
+  const isRecordingRef = useRef(false);
+  const recordingStartedAtRef = useRef<number>(0);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const pingRef = useRef<HTMLDivElement | null>(null);
+
   const sttTts = useVoiceChat({ onTurnComplete: handleTurnComplete, getSessionId: () => sessionIdRef.current });
   const live = useGeminiLive({
     onTurnComplete: handleTurnComplete,
@@ -272,17 +336,53 @@ function MissionInner() {
       if (missionControllerRef.current?.getState() === "completing") {
         missionControllerRef.current.notifyAudioDrained();
       }
+      // 케이가 실제로 말을 완전히 마친 시점(오디오 큐 비움) — speaking_k였다면 다음 아이
+      // 발화를 받을 수 있는 awaiting_child로 되돌린다.
+      if (missionStateRef.current === "active" && turnPhaseRef.current === "speaking_k") {
+        turnPhaseRef.current = "awaiting_child";
+      }
     },
     onClosingAudioChunk: () => {
       if (missionControllerRef.current?.getState() === "completing") {
         missionControllerRef.current.notifyClosingAudioStarted();
       }
     },
-    // gcp STT 전사가 외국 문자로 판정돼 채택 불가한 경우 — 아이에게 다시 말해달라 재질문.
-    // speakAsK는 미션 흐름(askedIndex/currentIndex)을 건드리지 않고 문장만 재생한다.
+    // gcp STT 전사가 외국 문자로 판정돼 채택 불가한 경우 — Live 모델에게 재질문 생성을
+    // 요청하지 않고, 클라이언트가 정해진 고정 문구를 speakAsK(기존 발화 경로)로 정확히
+    // 1회만 재생한다. askedIndex/currentIndex를 건드리지 않으므로 같은 질문에 대한
+    // awaiting_child 상태로 복귀한다(onAudioQueueDrained가 재생 종료 시 되돌림).
     onTranscriptRejected: () => {
+      if (turnPhaseRef.current === "speaking_k") return; // 이미 재질문 재생 중 — 중복 방지
+      turnPhaseRef.current = "speaking_k";
       live.speakAsK("잘 못 들었어. 다시 한번 말해줄래?");
     },
+    onAudioLevelChange: (level) => {
+      if (!buttonRef.current) return;
+      // 수동 녹음 중인 상태에서만 레벨 미터 반응
+      if (isRecordingRef.current) {
+        const scale = 1 + Math.min(level * 2.0, 0.45); // 최대 1.45배 확장
+        const shadowRadius = Math.min(level * 50, 40); // 최대 40px glow
+        
+        buttonRef.current.style.transform = `scale(${scale})`;
+        // --hb-warning (경고/오렌지색 계열) 디자인 토큰 활용
+        buttonRef.current.style.boxShadow = level > 0.005 
+          ? `0 0 ${shadowRadius}px var(--hb-warning)` 
+          : "none";
+
+        if (pingRef.current) {
+          pingRef.current.style.transform = `scale(${1 + level * 2.5})`;
+          pingRef.current.style.opacity = `${Math.min(0.2 + level * 1.5, 0.9)}`;
+        }
+      } else {
+        // 비녹음 시 즉시 리셋
+        buttonRef.current.style.transform = "scale(1)";
+        buttonRef.current.style.boxShadow = "none";
+        if (pingRef.current) {
+          pingRef.current.style.transform = "scale(1)";
+          pingRef.current.style.opacity = "0.2";
+        }
+      }
+    }
   });
   liveRef.current = live;
 
@@ -368,9 +468,14 @@ function MissionInner() {
   askQuestionRef.current = askQuestion;
 
   const switchToText = useCallback(() => {
+    if (isRecordingRef.current) {
+      live.sendActivityEnd();
+      setIsRecording(false);
+      isRecordingRef.current = false;
+    }
     setMode("text");
     voice.setMicEnabled(false);
-  }, [voice]);
+  }, [voice, live]);
 
   const switchToVoice = useCallback(() => {
     setMode("voice");
@@ -451,6 +556,10 @@ function MissionInner() {
           questionStatesRef.current = resumedStates;
           currentIndexRef.current = findResumeIndex(qs, resumedStates);
           setGauge(data.validAnswerCount ?? 0);
+          setProgressPercent(data.progressPercent ?? 0);
+          setRequiredCount(data.requiredCount ?? 5);
+          setCompleted(data.completed ?? false);
+          setEngineVersion(data.engine_version ?? "v1");
         } else {
           if (qs.length > 0) {
             qs[0].question_text = "안녕~ 난 케이야. 넌 이름이 뭐니?";
@@ -459,6 +568,10 @@ function MissionInner() {
           for (const q of qs) initStates[q.id] = "pending";
           questionStatesRef.current = initStates;
           currentIndexRef.current = 0;
+          setProgressPercent(0);
+          setRequiredCount(data.requiredCount ?? 5);
+          setCompleted(false);
+          setEngineVersion(data.engine_version ?? "v1");
         }
 
         setQuestions(qs);
@@ -491,6 +604,62 @@ function MissionInner() {
     })();
     return () => { cancelled = true; };
   }, [searchParams, router]);
+
+  // Live 모드가 활성화될 때 interactionMode 설정 동기화
+  useEffect(() => {
+    if (voice.status === "live") {
+      live.setInteractionMode(isAuto ? "auto" : "manual");
+    }
+  }, [voice.status, isAuto, live]);
+
+  const handleModeChange = useCallback((newMode: "auto" | "manual") => {
+    if (newMode === "auto") {
+      // 수동 발화(녹음) 중이었다면 안전하게 activityEnd 선전송
+      if (isRecordingRef.current) {
+        live.sendActivityEnd();
+        setIsRecording(false);
+        isRecordingRef.current = false;
+      }
+      live.setInteractionMode("auto");
+      setIsAuto(true);
+    } else {
+      live.setInteractionMode("manual");
+      setIsAuto(false);
+      setIsRecording(false);
+      isRecordingRef.current = false;
+    }
+  }, [live]);
+
+  const handleCentralButtonClick = useCallback(() => {
+    if (!isRecordingRef.current) {
+      // 첫 클릭: K가 말하는 중이면 오디오 재생 즉시 중단 후 activityStart
+      live.setAudioMuted(true);
+      live.setAudioMuted(false);
+      live.sendActivityStart();
+      setIsRecording(true);
+      isRecordingRef.current = true;
+      recordingStartedAtRef.current = Date.now();
+    } else {
+      // 두 번째 클릭: 최소 500ms 종료 경계 보호
+      if (Date.now() - recordingStartedAtRef.current < 500) {
+        console.log("[CentralButton] Click within 500ms limit - ignored.");
+        return;
+      }
+      live.sendActivityEnd();
+      setIsRecording(false);
+      isRecordingRef.current = false;
+      
+      // 레벨 시각 피드백 수동 리셋
+      if (buttonRef.current) {
+        buttonRef.current.style.transform = "scale(1)";
+        buttonRef.current.style.boxShadow = "none";
+      }
+      if (pingRef.current) {
+        pingRef.current.style.transform = "scale(1)";
+        pingRef.current.style.opacity = "0.2";
+      }
+    }
+  }, [live]);
 
   useEffect(() => {
     if (phase === "ready" && voiceMode && voice.status === "idle") {
@@ -629,8 +798,8 @@ function MissionInner() {
   const isLive = voice.status === "live";
   // completing 단계부터 이미 100%/완료 취급(마이크·입력 비활성화) — completed와의 차이는
   // "종료 발화가 아직 재생 중인지"뿐이라 화면 표시상 구분할 필요가 없다.
-  const isDone = missionState !== "active" || gauge >= REQUIRED_COUNT;
-  const missionPercent = Math.min(gauge * 20, 100);
+  const isDone = missionState !== "active" || completed;
+  const missionPercent = progressPercent;
 
   return (
     <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
@@ -665,7 +834,7 @@ function MissionInner() {
 
           <div className="px-6 mt-3">
             <p className="text-xs font-bold" style={{ color: "#1a6b5a" }}>
-              미션 진행 {missionPercent}% ({gauge}/{REQUIRED_COUNT})
+              미션 진행 {missionPercent}% ({gauge}/{requiredCount})
             </p>
             <div className="mt-1.5 h-2.5 rounded-full bg-gray-200 overflow-hidden">
               <div
@@ -689,6 +858,33 @@ function MissionInner() {
             priority
           />
         </div>
+
+        {isLive && !isDone && (
+          <div className="flex justify-center mb-4 shrink-0">
+            <div className="inline-flex items-center gap-1.5 p-1 bg-gray-100 rounded-full border border-gray-200 shadow-inner">
+              <button
+                onClick={() => handleModeChange("auto")}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-300 ease-out cursor-pointer ${
+                  isAuto 
+                    ? "bg-[#1a6b5a] text-white shadow-sm" 
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                자동 (케이가 알아서 들어요)
+              </button>
+              <button
+                onClick={() => handleModeChange("manual")}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-300 ease-out cursor-pointer ${
+                  !isAuto 
+                    ? "bg-[#1a6b5a] text-white shadow-sm" 
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                수동 (내가 말할 때 눌러요)
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 대화 말풍선: 이 영역만 스크롤 */}
@@ -752,18 +948,43 @@ function MissionInner() {
           )}
 
           {isLive && !isDone && (
-            <div className="relative flex items-center justify-center">
-              <div className="absolute w-16 h-16 rounded-full bg-orange-400/20 animate-ping pointer-events-none" />
-              <button
-                onClick={() => voice.stopSession()}
-                className="relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer bg-gradient-to-br from-orange-400 to-orange-500"
-                aria-label="마이크 끄기"
-              >
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
-                  <rect x="6" y="6" width="12" height="12" rx="2" />
-                </svg>
-              </button>
-            </div>
+            isAuto ? (
+              // 자동 모드일 때는 중앙 버튼을 완전히 숨김
+              <div className="w-16 h-16" />
+            ) : (
+              // 수동 모드일 때는 중앙 버튼 노출 및 레벨 비터 연결
+              <div className="relative flex items-center justify-center">
+                {isRecording && (
+                  <>
+                    <div className="absolute -top-8 text-[11px] font-extrabold text-orange-600 whitespace-nowrap bg-orange-50 px-2.5 py-0.5 rounded-full border border-orange-200 animate-bounce">
+                      케이가 듣고 있어요
+                    </div>
+                    <div
+                      ref={pingRef}
+                      className="absolute w-16 h-16 rounded-full bg-orange-400/20 pointer-events-none transition-transform duration-75"
+                    />
+                  </>
+                )}
+                <button
+                  ref={buttonRef}
+                  onClick={handleCentralButtonClick}
+                  className={`relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md active:scale-95 cursor-pointer transition-all duration-75 ${
+                    isRecording
+                      ? "bg-gradient-to-br from-orange-400 to-orange-500"
+                      : "bg-[#e8845a]"
+                  }`}
+                  aria-label={isRecording ? "말하기 완료" : "말하기 시작"}
+                >
+                  {isRecording ? (
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
+                      <rect x="6" y="6" width="12" height="12" rx="2" />
+                    </svg>
+                  ) : (
+                    <span className="text-2xl">🎤</span>
+                  )}
+                </button>
+              </div>
+            )
           )}
 
           {!isLive && !isConnecting && !isDone && (

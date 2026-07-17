@@ -16,6 +16,7 @@ import {
   type StoreChild,
 } from "@/lib/store";
 import { getEffectiveRetention, type Tier } from "@/lib/plan/retention";
+import { CONSENT_DOCUMENT_TEXT } from "@/lib/plan/consentDocument";
 
 function formatRetentionLabel(tier: Tier): string {
   const retention = getEffectiveRetention(tier, 0);
@@ -84,6 +85,12 @@ export default function ParentSettingsPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   // 요금제 다운그레이드 확인 모달 — "확인" 전에는 어떤 스탬프도 부여하지 않는다(비가역 파기 실수 방지).
   const [showDowngradeConfirm, setShowDowngradeConfirm] = useState(false);
+
+  // 법정대리인 동의 철회 상태 — 철회 확인 전에는 API를 호출하지 않는다(되돌릴 방법이 없는
+  // 조작이라 확인 모달을 반드시 거치게 함). withdrawTarget에 아이 정보를 담아 모달에 표시.
+  const [withdrawTarget, setWithdrawTarget] = useState<{ childId: string; displayName: string } | null>(null);
+  const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
   // 가입 신청 목록 및 로딩 상태
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
@@ -179,6 +186,7 @@ export default function ParentSettingsPage() {
           grade: childProf?.grade || "",
           interests: childProf?.interests || [],
           tier: childProf?.tier ?? 1,
+          guardianConsentWithdrawnAt: childProf?.guardian_consent_withdrawn_at || null,
           parentEmail: m.parent_email || ""
         };
       });
@@ -258,6 +266,30 @@ export default function ParentSettingsPage() {
     }
     setEditChild(null);
     loadFamilyMembers();
+  };
+
+  const handleWithdrawConsent = async () => {
+    if (!withdrawTarget) return;
+    setWithdrawLoading(true);
+    setWithdrawError(null);
+    try {
+      const res = await fetch(`/api/child/${withdrawTarget.childId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ withdrawConsent: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setWithdrawError(data.error || "동의 철회에 실패했습니다.");
+        return;
+      }
+      setWithdrawTarget(null);
+      await loadFamilyMembers();
+    } catch {
+      setWithdrawError("네트워크 에러가 발생했습니다.");
+    } finally {
+      setWithdrawLoading(false);
+    }
   };
 
   const handleAddChild = async (e: React.FormEvent) => {
@@ -493,6 +525,11 @@ export default function ParentSettingsPage() {
                       </div>
                     </div>
 
+                    <div
+                      className="max-h-28 overflow-y-auto whitespace-pre-wrap rounded-lg border border-gray-200 bg-gray-50 p-2 text-[9px] leading-relaxed text-gray-500"
+                    >
+                      {CONSENT_DOCUMENT_TEXT}
+                    </div>
                     <label className="flex items-center gap-2 px-1 mt-1 cursor-pointer">
                       <input
                         type="checkbox"
@@ -500,7 +537,7 @@ export default function ParentSettingsPage() {
                         onChange={(e) => setAddChildConsent(e.target.checked)}
                         className="w-4 h-4 rounded text-[#1a6b5a]"
                       />
-                      <span className="text-[10px] font-bold text-gray-500">법정대리인 개인정보 동의함</span>
+                      <span className="text-[10px] font-bold text-gray-500">위 내용을 확인했으며, 법정대리인으로서 개인정보 수집·이용에 동의합니다</span>
                     </label>
 
                     {addError && <p className="text-xs text-red-500 px-1">{addError}</p>}
@@ -546,26 +583,43 @@ export default function ParentSettingsPage() {
                     <p className="text-[10px] font-bold text-gray-500">자녀 프로필 수정</p>
                     <div className="flex flex-col gap-2">
                       {familyMembers.filter(m => m.role === "child").map((m) => (
-                        <div key={m.memberId} className="bg-white border border-gray-100 rounded-xl p-2.5 flex items-center justify-between">
+                        <div key={m.memberId} className="bg-white border border-gray-100 rounded-xl p-2.5 flex items-center justify-between gap-2">
                           <span className="text-xs font-bold text-gray-800">🧒 {m.displayName} ({m.grade})</span>
-                          <button
-                            onClick={() => {
-                              setEditChild({
-                                id: m.childId,
-                                name: m.displayName,
-                                grade: m.grade,
-                                interests: m.interests
-                              });
-                              setEditName(m.displayName);
-                              setEditGrade(m.grade);
-                              setEditInterests(m.interests ?? []);
-                              setEditTier(m.tier ?? 1);
-                              setEditOriginalTier(m.tier ?? 1);
-                            }}
-                            className="text-[10px] bg-[#f3f4f6] text-gray-600 font-bold px-2.5 py-1 rounded-lg cursor-pointer"
-                          >
-                            수정하기
-                          </button>
+                          {m.guardianConsentWithdrawnAt ? (
+                            <span className="text-[10px] bg-red-50 text-red-500 font-bold px-2.5 py-1 rounded-lg shrink-0">
+                              동의 철회됨
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                onClick={() => {
+                                  setEditChild({
+                                    id: m.childId,
+                                    name: m.displayName,
+                                    grade: m.grade,
+                                    interests: m.interests
+                                  });
+                                  setEditName(m.displayName);
+                                  setEditGrade(m.grade);
+                                  setEditInterests(m.interests ?? []);
+                                  setEditTier(m.tier ?? 1);
+                                  setEditOriginalTier(m.tier ?? 1);
+                                }}
+                                className="text-[10px] bg-[#f3f4f6] text-gray-600 font-bold px-2.5 py-1 rounded-lg cursor-pointer"
+                              >
+                                수정하기
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setWithdrawError(null);
+                                  setWithdrawTarget({ childId: m.childId, displayName: m.displayName });
+                                }}
+                                className="text-[10px] bg-red-50 text-red-500 font-bold px-2.5 py-1 rounded-lg cursor-pointer"
+                              >
+                                동의 철회
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -824,6 +878,40 @@ export default function ParentSettingsPage() {
                 <button
                   onClick={() => setShowDowngradeConfirm(false)}
                   className="flex-1 py-2 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* 법정대리인 동의 철회 확인 모달 — "확인" 전에는 API를 호출하지 않는다(되돌릴 방법이 없는 조작). */}
+        {withdrawTarget && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6"
+            onClick={() => !withdrawLoading && setWithdrawTarget(null)}
+          >
+            <div className="bg-white rounded-2xl p-5 max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
+              <p className="text-sm font-bold mb-2" style={{ color: "#1e1e2d" }}>
+                {withdrawTarget.displayName}의 동의를 철회하시겠어요?
+              </p>
+              <p className="text-xs leading-relaxed text-gray-500 mb-4">
+                철회하면 이 아이의 채팅·미션·리포트·음성 기능이 즉시 모두 막힙니다. 재동의는
+                아이 재등록 절차를 다시 거쳐야 하며 이 화면에서 되돌릴 수 없습니다.
+              </p>
+              {withdrawError && <p className="text-xs text-red-500 mb-3">{withdrawError}</p>}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleWithdrawConsent}
+                  disabled={withdrawLoading}
+                  className="flex-1 py-2 bg-red-500 text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
+                >
+                  {withdrawLoading ? "철회 중..." : "동의 철회"}
+                </button>
+                <button
+                  onClick={() => setWithdrawTarget(null)}
+                  disabled={withdrawLoading}
+                  className="flex-1 py-2 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
                 >
                   취소
                 </button>

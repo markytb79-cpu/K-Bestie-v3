@@ -5,18 +5,23 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { createServiceClient } from "@/lib/supabase/server";
+import {
+  type ReportModelConfig,
+  REPORT_MODELS,
+  ACTIVE_REPORT_MODEL_ID,
+  getActiveReportModel,
+} from "./reportModel";
+
+// 리포트(요약) 모델 등록부는 app/api/_lib/reportModel.ts로 이동했다(Deno Edge Function도
+// 그 파일을 그대로 import해야 해서, 외부 import가 없는 순수 TS로 분리해둔 것). 기존 호출부
+// 하위 호환을 위해 여기서 재수출한다.
+export { type ReportModelConfig, REPORT_MODELS, ACTIVE_REPORT_MODEL_ID, getActiveReportModel };
 
 export interface VoiceModelConfig {
   modelId: string;
   apiBase: string;
   inputSampleRate: number;
   outputSampleRate: number;
-}
-
-export interface ReportModelConfig {
-  modelId: string;
-  apiBase: string;
-  maxOutputTokens: number;
 }
 
 export interface MissionModelConfig {
@@ -64,22 +69,6 @@ export const VOICE_MODELS: Record<string, VoiceModelConfig> = {
   },
 };
 
-// ── 리포트(요약) 모델 등록부 ─────────────────────────────────
-export const REPORT_MODELS: Record<string, ReportModelConfig> = {
-  // JSON 모드 안정 지원 — 리포트 생성 기본값
-  "gemini-2.5-flash": {
-    modelId: "gemini-2.5-flash",
-    apiBase: "https://generativelanguage.googleapis.com",
-    maxOutputTokens: 1024,
-  },
-  // Gemma 계열 (JSON 모드 불안정 — 필요 시 프롬프트 튜닝 필요)
-  "gemma-4-31b-it": {
-    modelId: "gemma-4-31b-it",
-    apiBase: "https://generativelanguage.googleapis.com",
-    maxOutputTokens: 1024,
-  },
-};
-
 // ── 미션 대화(그룹B) 모델 등록부 ─────────────────────────────
 export const MISSION_MODELS: Record<string, MissionModelConfig> = {
   // 테스트 단계 비용 절감을 위해 flash-lite로 임시 통일(2026-07-12).
@@ -93,18 +82,16 @@ export const MISSION_MODELS: Record<string, MissionModelConfig> = {
 // ── 현재 활성 모델 (여기만 바꾸면 전체 적용) ─────────────────
 // Tier3(Premium, Live API 음성) 전용 모델 — 공식 transcription 지원(gemini-3.1-flash-live-preview).
 export const ACTIVE_VOICE_MODEL_ID = "gemini-3.1-flash-live-preview";
-export const ACTIVE_REPORT_MODEL_ID = "gemma-4-31b-it";
 export const ACTIVE_MISSION_MODEL_ID = "gemini-flash-lite-latest";
+
+// Vertex Live 릴레이(Cloud Run, services/vertex-live-relay) 전용 모델 ID.
+// AI Studio Live와 인증/연결 방식이 완전히 달라(서버 릴레이 필요) VOICE_MODELS 레지스트리에는
+// 넣지 않는다 — /api/voice/token이 provider="vertex"일 때 이 값을 그대로 반환한다.
+export const VERTEX_LIVE_VOICE_MODEL_ID = "gemini-live-2.5-flash-native-audio";
 
 export function getActiveVoiceModel(): VoiceModelConfig {
   const config = VOICE_MODELS[ACTIVE_VOICE_MODEL_ID];
   if (!config) throw new Error(`Unknown voice model: ${ACTIVE_VOICE_MODEL_ID}`);
-  return config;
-}
-
-export function getActiveReportModel(): ReportModelConfig {
-  const config = REPORT_MODELS[ACTIVE_REPORT_MODEL_ID];
-  if (!config) throw new Error(`Unknown report model: ${ACTIVE_REPORT_MODEL_ID}`);
   return config;
 }
 

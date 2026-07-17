@@ -1,6 +1,7 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { getModelForGroup, createGenAIClient, type GroupModelConfig } from "@/app/api/_lib/ai";
 import { WEEKLY_REPORT_PROMPT_TEMPLATE } from "@/app/api/_lib/prompts";
+import { sanitizeReportJson } from "@/app/api/_lib/reportSafetyGuard";
 import type { GoogleGenAI } from "@google/genai";
 
 export interface WeeklySummaryResult {
@@ -88,7 +89,7 @@ async function reduceToWeeklyReport(
 
   const text = (result.text ?? "").trim();
   try {
-    return JSON.parse(text);
+    return sanitizeReportJson(JSON.parse(text));
   } catch {
     throw new Error(`주간 리포트 JSON 파싱 실패: ${text.slice(0, 100)}`);
   }
@@ -166,11 +167,13 @@ export async function generateWeeklySummary(
   const db = createServiceClient();
 
   // 해당 주에 세션이 있었던 아이 목록(daily_reports가 있는 child만 — 대화가 없으면 스킵)
+  // 동의 철회된 아이는 신규 주간 리포트 생성 대상에서 제외
   const { data: sessionsWithChild, error: fetchErr } = await db
     .from("chat_sessions")
-    .select("id, child_id")
+    .select("id, child_id, child_profiles!inner(guardian_consent_withdrawn_at)")
     .gte("started_at", `${weekStart}T00:00:00Z`)
-    .lte("started_at", `${weekEnd}T23:59:59Z`);
+    .lte("started_at", `${weekEnd}T23:59:59Z`)
+    .is("child_profiles.guardian_consent_withdrawn_at", null);
 
   if (fetchErr) {
     throw new Error(`generateWeeklySummary: 세션 조회 실패 — ${fetchErr.message}`);

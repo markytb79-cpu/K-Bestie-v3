@@ -507,7 +507,7 @@ const MODEL_OPTIONS: Record<ModelGroup, { provider: ProviderId; modelId: string;
   ],
   C: [
     { provider: "ai_studio", modelId: "gemini-3.1-flash-live-preview", label: "AI Studio · gemini-3.1-flash-live-preview" },
-    { provider: "vertex", modelId: "gemini-2.5-flash-native-audio", label: "Vertex · gemini-2.5-flash-native-audio" },
+    { provider: "vertex", modelId: "gemini-live-2.5-flash-native-audio", label: "Vertex · gemini-live-2.5-flash-native-audio (Cloud Run 릴레이 경유)" },
   ],
 };
 

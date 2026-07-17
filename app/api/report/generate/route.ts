@@ -2,9 +2,13 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getModelForGroup, createGenAIClient, createAIStudioFallbackClient } from "@/app/api/_lib/ai";
 import { REPORT_PROMPT_TEMPLATE } from "@/app/api/_lib/prompts";
+import { sanitizeReportJson } from "@/app/api/_lib/reportSafetyGuard";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
+import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import type { Turn } from "@/hooks/useGeminiLive";
+
+import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 export const runtime = "nodejs";
 
@@ -32,13 +36,21 @@ export async function POST(req: NextRequest) {
 
   const { data: session, error: sessionError } = await authClient
     .from("chat_sessions")
-    .select("id")
+    .select("id, child_id")
     .eq("id", sessionId)
     .single();
 
   if (sessionError || !session) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
+
+  const authCheck = await requireChildAccess(authClient, user.id, session.child_id);
+  if (!authCheck.allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const consentBlocked = await checkConsentForChild(session.child_id);
+  if (consentBlocked) return consentBlocked;
 
   const supabase = createServiceClient();
   const reportModel = await getModelForGroup("A");
@@ -176,7 +188,7 @@ export async function POST(req: NextRequest) {
     dashboard_cards?: any;
   };
   try {
-    report = JSON.parse(resultText);
+    report = sanitizeReportJson(JSON.parse(resultText));
   } catch {
     return NextResponse.json({ error: "Report JSON parsing failed", raw: resultText }, { status: 500 });
   }

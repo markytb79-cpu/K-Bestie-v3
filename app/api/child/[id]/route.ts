@@ -4,6 +4,8 @@ import { LIVE_VOICE_NAMES } from "@/lib/plan/liveVoices";
 import { stampRetention, restoreRetention } from "@/lib/plan/retentionStamp";
 import type { Tier } from "@/lib/plan/retention";
 
+import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+
 export const runtime = "nodejs";
 
 export async function GET(
@@ -14,6 +16,11 @@ export async function GET(
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const authCheck = await requireChildAccess(supabase, user.id, id);
+  if (!authCheck.allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   try {
     const { data, error } = await supabase
@@ -40,7 +47,19 @@ export async function PATCH(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { name?: string; grade?: string; interests?: string[]; liveVoiceName?: string; tier?: number };
+  const authCheck = await requireChildAccess(supabase, user.id, id);
+  if (!authCheck.allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  let body: {
+    name?: string;
+    grade?: string;
+    interests?: string[];
+    liveVoiceName?: string;
+    tier?: number;
+    withdrawConsent?: boolean;
+  };
   try {
     body = await req.json();
   } catch {
@@ -48,6 +67,13 @@ export async function PATCH(
   }
 
   const updateData: Record<string, unknown> = {};
+  // 법정대리인 동의 철회 — RLS(child_profiles_update)가 이미 owner_parent/parent만 허용하므로
+  // 여기서 별도 role 체크는 하지 않는다. 철회 시 guardian_consent를 false로 되돌리고
+  // 철회 시각을 남긴다(재동의 시에는 children/members 등록 플로우를 다시 타야 하므로 별도 API 없음).
+  if (body.withdrawConsent === true) {
+    updateData.guardian_consent = false;
+    updateData.guardian_consent_withdrawn_at = new Date().toISOString();
+  }
   if (body.name?.trim()) updateData.name = body.name.trim();
   if (body.grade) updateData.grade = body.grade;
   if (Array.isArray(body.interests)) updateData.interests = body.interests;
@@ -115,6 +141,11 @@ export async function DELETE(
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const authCheck = await requireChildAccess(supabase, user.id, id);
+  if (!authCheck.allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   try {
     const { error } = await supabase

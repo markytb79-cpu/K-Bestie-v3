@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { checkConsentForChild } from "@/lib/plan/consentGuard";
 
 export const runtime = "nodejs";
 
@@ -48,6 +49,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const consentBlocked = await checkConsentForChild(session.child_id);
+  if (consentBlocked) return consentBlocked;
+
   const { data: messages, error } = await service
     .from("chat_messages")
     .select("role, content, created_at")
@@ -81,15 +85,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "role must be child or k" }, { status: 400 });
   }
 
-  const { data: session, error: sessionError } = await supabase
+  const service = createServiceClient();
+
+  const { data: session, error: sessionError } = await service
     .from("chat_sessions")
-    .select("id, session_type")
+    .select("id, session_type, child_id")
     .eq("id", sessionId)
-    .single();
+    .maybeSingle();
 
   if (sessionError || !session) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
+
+  const { data: child } = await service
+    .from("child_profiles")
+    .select("member_id")
+    .eq("id", session.child_id)
+    .maybeSingle();
+  if (!child?.member_id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { data: member } = await service
+    .from("family_members")
+    .select("user_id")
+    .eq("id", child.member_id)
+    .maybeSingle();
+
+  // 세션 소유 아이 본인만 통과 — 부모/다른 가족 구성원은 user_id가 달라 여기서 막힘
+  if (!member?.user_id || member.user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const consentBlocked = await checkConsentForChild(session.child_id);
+  if (consentBlocked) return consentBlocked;
 
   // mode: 기존 session_type 재사용(추가 쿼리 없음). 자유대화는 라이브가 없으므로
   // voice_mode를 클라이언트 입력과 무관하게 항상 stt_tts로 서버가 클램프한다.
@@ -97,7 +126,6 @@ export async function POST(req: NextRequest) {
   const voiceMode: "stt_tts" | "live" =
     mode === "free" ? "stt_tts" : bodyVoiceMode === "live" ? "live" : "stt_tts";
 
-  const service = createServiceClient();
   const { error } = await service
     .from("chat_messages")
     .insert({ session_id: sessionId, role, content: content.trim(), mode, voice_mode: voiceMode });
@@ -108,3 +136,4 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
+

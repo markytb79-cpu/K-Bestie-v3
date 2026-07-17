@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { CONSENT_DOCUMENT_VERSION } from "@/lib/plan/consentDocument";
 
 export const runtime = "nodejs";
 
@@ -161,6 +162,9 @@ export async function POST(
         grade,
         interests,
         email: null, // 아이디 계정은 이메일 불필요
+        guardian_consent: true,
+        guardian_consent_at: new Date().toISOString(),
+        guardian_consent_version: CONSENT_DOCUMENT_VERSION,
       })
       .select("id, name, grade, interests")
       .single();

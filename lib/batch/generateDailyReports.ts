@@ -1,6 +1,7 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { REPORT_PROMPT_TEMPLATE } from "@/app/api/_lib/prompts";
+import { sanitizeReportJson } from "@/app/api/_lib/reportSafetyGuard";
 
 export interface DailyReportResult {
   created: string[];  // 생성된 daily_report id 목록
@@ -20,12 +21,13 @@ export async function generateDailyReports(targetDate: string): Promise<DailyRep
   const db = createServiceClient();
   const result: DailyReportResult = { created: [], skipped: [], errors: [] };
 
-  // targetDate에 종료된 세션 중 리포트 없는 것
+  // targetDate에 종료된 세션 중 리포트 없는 것 — 동의 철회된 아이는 신규 리포트 생성 대상에서 제외
   const { data: sessions, error: fetchErr } = await db
     .from("chat_sessions")
-    .select("id, child_id")
+    .select("id, child_id, child_profiles!inner(guardian_consent_withdrawn_at)")
     .gte("ended_at", `${targetDate}T00:00:00+09:00`)
     .lte("ended_at", `${targetDate}T23:59:59+09:00`)
+    .is("child_profiles.guardian_consent_withdrawn_at", null)
     .not("id", "in", `(SELECT session_id FROM daily_reports)`);
 
   if (fetchErr) {
@@ -74,7 +76,7 @@ export async function generateDailyReports(targetDate: string): Promise<DailyRep
         dashboard_cards?: Record<string, string>;
       };
       try {
-        report = JSON.parse(genResult.text ?? "{}");
+        report = sanitizeReportJson(JSON.parse(genResult.text ?? "{}"));
       } catch {
         throw new Error(`JSON 파싱 실패: ${genResult.text?.slice(0, 100)}`);
       }
