@@ -834,7 +834,7 @@ function MissionInner() {
     <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
       {/* 상단 고정 영역: 헤더 + 진행률 게이지 + 마스코트 (스크롤되지 않음) */}
       <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
-        <div className="flex items-center justify-center gap-3 px-4 pt-3 pb-1">
+        <div className="flex items-center justify-center px-4 pt-3 pb-1">
           <Link href="/child/home" className="cursor-pointer shrink-0">
             <Image
               src="/Images/logo/Logo.png"
@@ -845,34 +845,6 @@ function MissionInner() {
               priority
             />
           </Link>
-          {isLiveMode && !isDone && (
-            <div className="inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-full border border-gray-200 shadow-inner shrink-0">
-              <button
-                onClick={() => handleModeChange("auto")}
-                aria-pressed={isAuto}
-                aria-label="자동으로 말하기"
-                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all duration-300 ease-out cursor-pointer ${
-                  isAuto 
-                    ? "bg-[#1a6b5a] text-white shadow-sm" 
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                자동
-              </button>
-              <button
-                onClick={() => handleModeChange("manual")}
-                aria-pressed={!isAuto}
-                aria-label="버튼 눌러 말하기"
-                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all duration-300 ease-out cursor-pointer ${
-                  !isAuto 
-                    ? "bg-[#1a6b5a] text-white shadow-sm" 
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                수동
-              </button>
-            </div>
-          )}
         </div>
 
         {isDone && (
@@ -905,7 +877,7 @@ function MissionInner() {
           </div>
         </div>
 
-        <div className="flex justify-center mb-2">
+        <div className="relative flex justify-center items-center mb-2">
           <Image
             src="/Images/mascot/mascot-standing.png"
             alt="케이 마스코트"
@@ -914,6 +886,34 @@ function MissionInner() {
             className="object-contain"
             priority
           />
+          {isLiveMode && !isDone && (
+            <div className="absolute left-[calc(50%+52px)] top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-full border border-gray-200 shadow-inner shrink-0 z-10">
+              <button
+                onClick={() => handleModeChange("auto")}
+                aria-pressed={isAuto}
+                aria-label="자동으로 말하기"
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all duration-300 ease-out cursor-pointer ${
+                  isAuto
+                    ? "bg-[#1a6b5a] text-white shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                자동
+              </button>
+              <button
+                onClick={() => handleModeChange("manual")}
+                aria-pressed={!isAuto}
+                aria-label="버튼 눌러 말하기"
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all duration-300 ease-out cursor-pointer ${
+                  !isAuto
+                    ? "bg-[#1a6b5a] text-white shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                수동
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
