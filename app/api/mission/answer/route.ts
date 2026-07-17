@@ -101,20 +101,39 @@ export async function POST(req: NextRequest) {
   if (consentBlocked) return consentBlocked;
 
   // 기능 플래그 및 코호트 체크 (진행상태 로드 전으로 당김)
-  const isV2 = isQuestionEngineV2Enabled(session.child_id);
+  const isV2Flag = isQuestionEngineV2Enabled(session.child_id);
+
+  // 1) status만 먼저 단독 조회 — isV2Flag와 무관하게 항상 실행, SAFETY_PAUSED/COMPLETED면 즉시 차단
+  const { data: statusRow, error: statusErr } = await service
+    .from("mission_progress")
+    .select("status")
+    .eq("session_id", sessionId)
+    .single();
+
+  if (statusErr || !statusRow) {
+    console.error("[answer/route] status query failed:", statusErr);
+    return NextResponse.json({ error: "Mission progress not found" }, { status: 404 });
+  }
+
+  if (statusRow.status === "SAFETY_PAUSED" || statusRow.status === "COMPLETED") {
+    const resPayload = { error: "Mission is already completed or safety paused", status: statusRow.status };
+    if (childTurnId) setCachedAnswer(childTurnId, resPayload);
+    return NextResponse.json(resPayload, { status: 423 });
+  }
 
   interface MissionProgressRow {
     session_id: string;
     valid_answer_count: number | null;
     question_ids: string[] | null;
     question_states: Record<string, QuestionState> | null;
-    status?: string | null;
     updated_at?: string | null;
+    required_valid_count?: number | null;
+    engine_version?: string | null;
   }
 
-  // isV2 여부에 따라 select fields 분리 (V1 경로에서 신규 컬럼 select 방지)
-  const fields = isV2
-    ? "session_id, valid_answer_count, question_ids, question_states, status"
+  // 2) 나머지 필드 조회 — required_valid_count/engine_version은 isV2Flag가 true로 확정된 경우에만 포함
+  const fields = isV2Flag
+    ? "session_id, valid_answer_count, question_ids, question_states, required_valid_count, engine_version"
     : "session_id, valid_answer_count, question_ids, question_states";
 
   // 진행상태 로드
@@ -129,12 +148,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Mission progress not found" }, { status: 404 });
   }
 
-  // SAFETY_PAUSED 또는 COMPLETED 상태인 경우 423으로 즉시 반환하며 차단
-  if (isV2 && (progress.status === "SAFETY_PAUSED" || progress.status === "COMPLETED")) {
-    const resPayload = { error: "Mission is already completed or safety paused", status: progress.status };
-    if (childTurnId) setCachedAnswer(childTurnId, resPayload);
-    return NextResponse.json(resPayload, { status: 423 });
-  }
+  const isSessionV2 = isV2Flag && progress.engine_version === "v2";
+  const requiredCount = isSessionV2 ? (progress.required_valid_count ?? 10) : REQUIRED_COUNT;
 
   const questionIds: string[] = progress.question_ids ?? [];
   if (!questionIds.includes(questionId)) {
@@ -144,7 +159,7 @@ export async function POST(req: NextRequest) {
   const states: Record<string, QuestionState> = { ...(progress.question_states ?? {}) };
   const prevState = states[questionId] ?? "pending";
 
-  if (isV2) {
+  if (isSessionV2) {
     // ------------------ 신규 V2 질문엔진 로직 ------------------
     
     // 현재까지 asked_order가 세팅된 행의 개수 조회
@@ -222,7 +237,7 @@ export async function POST(req: NextRequest) {
         questionState: "skipped" as const,
         validAnswerCount: progress.valid_answer_count ?? 0,
         progressPercent: (progress.valid_answer_count ?? 0) * 10,
-        requiredCount: 10,
+        requiredCount: requiredCount,
         completed: false,
         engine_version: "v2",
         questionStates: states,
@@ -288,7 +303,7 @@ export async function POST(req: NextRequest) {
           questionState: newState,
           validAnswerCount: progress.valid_answer_count ?? 0,
           progressPercent: (progress.valid_answer_count ?? 0) * 10,
-          requiredCount: 10,
+          requiredCount: requiredCount,
           completed: false,
           engine_version: "v2",
           questionStates: states,
@@ -310,7 +325,7 @@ export async function POST(req: NextRequest) {
       p_question_id: questionId,
       p_answer_status: answerStatus,
       p_answer_classification: classification,
-      p_required_valid_count: 10,
+      p_required_valid_count: requiredCount,
       p_reward_type: "mission_complete",
     });
 
@@ -458,7 +473,7 @@ export async function POST(req: NextRequest) {
       questionState: newState,
       validAnswerCount: rpcResult.valid_answer_count,
       progressPercent: rpcResult.valid_answer_count * 10,
-      requiredCount: 10,
+      requiredCount: requiredCount,
       completed: rpcResult.completed,
       engine_version: "v2",
       questionStates: finalQuestionStates,

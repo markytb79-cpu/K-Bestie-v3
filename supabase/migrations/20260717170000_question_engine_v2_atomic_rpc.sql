@@ -105,7 +105,7 @@ BEGIN
 
     -- (b) 골드키 지급 시도 (락으로 동시 지급 경합 제어)
     BEGIN
-      PERFORM pg_advisory_xact_lock(hashtext(p_child_id::text || '|' || to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYYMMDD')));
+      PERFORM pg_advisory_xact_lock(hashtext(p_child_id::text));
 
       v_today_date := (now() AT TIME ZONE 'Asia/Seoul')::date;
 
@@ -120,14 +120,20 @@ BEGIN
       IF v_daily_rewards_count >= 2 THEN
         v_reward_status := 'daily_limit_reached';
       ELSE
-        -- PLACEHOLDER: 실제 골드키 보유 상한 정책은 아직 확정되지 않음, 대표님 확인 필요. 현재 값은 사실상 무제한(안전판 용도)
+        -- 확정 정책(대표님 승인, 2026-07-18): 활성 골드키 보유 상한 22개.
+        -- TS lib/goldkey/ledger.ts의 MAX_ACTIVE_BALANCE 상수와 반드시 동기화 유지.
+        -- 상한 도달 시 미션은 정상 COMPLETED 처리되지만(이미 위에서 처리됨) 보상만 지급하지 않는다.
+        -- 소급 지급 없음: mission_id+reward_type 멱등 키 + 세션 COMPLETED 후 RPC 재호출 자체가 blocked 체크로
+        -- 차단되므로, 이후 잔액이 줄어도 이 미션에 대해 다시 지급을 시도하는 경로가 존재하지 않는다.
+        -- 위에서 pg_advisory_xact_lock을 child_id 단위(날짜 무관)로 걸었으므로, 자정 경계를 걸친 동시 요청을
+        -- 포함해 어떤 동시 완료 요청에서도 이 SELECT는 직렬화된 최신값을 읽어 22개를 초과해 지급하지 않는다.
         SELECT COUNT(*)::INT INTO v_active_balance
         FROM gold_key_ledger
         WHERE child_id = p_child_id
           AND consumed = false
           AND expires_at > now();
 
-        IF v_active_balance >= 999 THEN
+        IF v_active_balance >= 22 THEN
           v_reward_status := 'max_balance_reached';
         ELSE
           INSERT INTO gold_key_ledger (

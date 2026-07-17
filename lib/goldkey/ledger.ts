@@ -10,6 +10,14 @@ const KST_OFFSET = "+09:00";
 const EXPIRE_DAYS = 7;
 const MISSION_DAILY_LIMIT = 2;
 
+// 확정 정책(대표님 승인, 2026-07-18): 활성 골드키 보유 상한 22개.
+// V2 미션완료 보상은 SQL RPC(record_v2_mission_answer, supabase/migrations/20260717170000_question_engine_v2_atomic_rpc.sql)가
+// 직접 처리하므로 이 상수는 이 TS 파일에서 직접 실행되지는 않지만, 정책의 단일 문서화 지점(source of documentation)이다.
+// [동기화 기준] 이 파일의 EXPIRE_DAYS/MISSION_DAILY_LIMIT/MAX_ACTIVE_BALANCE 중 하나라도 변경되면
+// 반드시 위 SQL RPC 파일의 대응 하드코딩 값(만료일수, 일일한도, 잔액상한)도 같은 커밋에서 함께 갱신할 것 — 두 값이
+// 어긋나면 V1(TS 경로)과 V2(RPC 경로)의 보상 정책이 서로 달라지는 회귀가 발생한다.
+const MAX_ACTIVE_BALANCE = 22;
+
 /** Asia/Seoul 기준 오늘 날짜 "YYYY-MM-DD" */
 function kstToday(): string {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);

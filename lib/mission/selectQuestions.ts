@@ -162,9 +162,9 @@ export async function selectQuestions(
   return picked.slice(0, TOTAL_COUNT);
 }
 
-const REQUIRED_COUNT_V2 = 10;
+export const REQUIRED_COUNT_V2 = 10;
 const RESERVE_COUNT_V2 = 10;
-const TOTAL_COUNT_V2 = REQUIRED_COUNT_V2 + RESERVE_COUNT_V2; // 20
+export const TOTAL_COUNT_V2 = REQUIRED_COUNT_V2 + RESERVE_COUNT_V2; // 20
 
 export async function getApprovedV2Candidates(
   grade: number,
@@ -186,31 +186,14 @@ export async function getApprovedV2Candidates(
 }
 
 /**
- * V2 대상 APPROVED & 활성 문항 개수 조회
+ * 주어진 V2 후보 목록에 아이별 개인화 필터(쿨다운·최근출제 제외)를 적용해 지금 실제로 낼 수 있는 후보만 반환한다.
+ * selectQuestionsV2와 countApprovedV2Candidates가 이 함수를 공유해 두 로직이 어긋나지 않도록 한다.
  */
-export async function countApprovedV2Candidates(
-  grade: number,
-  roundType: RoundType
-): Promise<number> {
-  const candidates = await getApprovedV2Candidates(grade, roundType);
-  return candidates.length;
-}
-
-/**
- * V2 용 미션 질문 20개(기본10+예비10)를 선별해 순서 배열로 반환한다.
- * clinical_status = 'APPROVED' 이고 is_active = true 인 문항만 선택한다.
- */
-export async function selectQuestionsV2(
+async function filterV2EligibleCandidates(
   childId: string,
-  grade: number,
-  roundType: RoundType
-): Promise<string[]> {
+  candidates: QuestionRow[]
+): Promise<{ eligible: QuestionRow[]; lastAskedAt: Map<string, number> }> {
   const service = createServiceClient();
-
-  const candidates = await getApprovedV2Candidates(grade, roundType);
-  if (candidates.length === 0) return [];
-
-  // 아이의 출제이력 로드 (question_id -> 마지막 asked_at)
   const { data: historyRaw } = await service
     .from("mission_question_history")
     .select("question_id, asked_at")
@@ -227,18 +210,53 @@ export async function selectQuestionsV2(
   const now = Date.now();
   const daysSince = (ts: number) => (now - ts) / (1000 * 60 * 60 * 24);
 
-  // 2/3. 주기 필터
   const eligible = candidates.filter((q) => {
     const last = lastAskedAt.get(q.id);
     if (q.cycle_type === "onboarding") {
-      return last === undefined; // 이미 물어본 온보딩 제외
+      return last === undefined;
     }
     if (q.cycle_type === "always") {
-      return true; // 상시는 항상 후보
+      return true;
     }
-    if (last === undefined) return true; // 주기형이지만 한 번도 출제 안 됨
+    if (last === undefined) return true;
     return daysSince(last) >= CYCLE_INTERVAL_DAYS[q.cycle_type];
   });
+
+  return { eligible, lastAskedAt };
+}
+
+/**
+ * V2 시작 전 폴백 판정용 — 승인+활성 원시 후보가 아니라, 이 아이에게 쿨다운·최근출제 개인화 필터까지 적용한 후
+ * "지금 실제로 낼 수 있는" 후보 개수를 반환한다. PRIMARY 10개+RESERVE 10개(REQUIRED_COUNT_V2/TOTAL_COUNT_V2)
+ * 충족 여부는 호출부(app/api/mission/start/route.ts)에서 이 값을 기준으로 판단한다.
+ */
+export async function countApprovedV2Candidates(
+  childId: string,
+  grade: number,
+  roundType: RoundType
+): Promise<number> {
+  const candidates = await getApprovedV2Candidates(grade, roundType);
+  if (candidates.length === 0) return 0;
+  const { eligible } = await filterV2EligibleCandidates(childId, candidates);
+  return eligible.length;
+}
+
+/**
+ * V2 용 미션 질문 20개(기본10+예비10)를 선별해 순서 배열로 반환한다.
+ * clinical_status = 'APPROVED' 이고 is_active = true 인 문항만 선택한다.
+ */
+export async function selectQuestionsV2(
+  childId: string,
+  grade: number,
+  roundType: RoundType
+): Promise<string[]> {
+  const service = createServiceClient();
+
+  const candidates = await getApprovedV2Candidates(grade, roundType);
+  if (candidates.length === 0) return [];
+
+  const { eligible, lastAskedAt } = await filterV2EligibleCandidates(childId, candidates);
+
 
   const picked: string[] = [];
   const pickedSet = new Set<string>();
