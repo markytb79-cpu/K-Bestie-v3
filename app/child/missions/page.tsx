@@ -893,8 +893,10 @@ function MissionInner() {
       >
         {voice.transcript.length === 0 ? (
           <div className="flex items-center justify-center h-full text-center p-4">
-            <p className="text-xs" style={{ color: "#9ca3af" }}>
-              곧 케이가 첫 질문을 해줄 거예요 🌿
+            <p className="text-xs leading-relaxed" style={{ color: "#9ca3af" }}>
+              {isAuto
+                ? "시작 버튼을 한 번 누르면 이후 케이가 자동으로 들어요 🌿"
+                : "세션 시작 뒤 말하기 버튼을 사용해 말해요 🌿"}
             </p>
           </div>
         ) : (
@@ -989,11 +991,13 @@ function MissionInner() {
           {!isLive && !isConnecting && !isDone && (
             <button
               onClick={() => voice.startSession()}
-              className="w-16 h-16 rounded-full flex items-center justify-center text-2xl text-white shadow-md transition-transform active:scale-95 cursor-pointer"
+              className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
               style={{ background: "#e8845a" }}
-              aria-label="마이크 켜기"
+              aria-label="미션 시작"
             >
-              🎤
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                <path d="M8 5v14l11-7z" />
+              </svg>
             </button>
           )}
 
