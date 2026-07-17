@@ -744,7 +744,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
           }
 
           // K가 말을 시작하는 순간 아이 버퍼 flush
-          if (pendingChildText || (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0)) {
+          if ((pendingChildText || (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0)) && !isChildSpeakingRef.current) {
             console.log("[K] 📝 child (flush):", pendingChildText);
             flushChildTurn(pendingChildText);
             pendingChildText = "";
@@ -1196,6 +1196,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     if (!sessionRef.current || statusRef.current !== "live") return false;
     console.log("[K] 📡 sendActivityStart");
     stopAllScheduledSources();
+    childAudioChunksRef.current = [];
+    childTurnFlushedRef.current = false;
     isChildSpeakingRef.current = true;
     sessionRef.current.sendRealtimeInput({ activityStart: {} });
     return true;
@@ -1206,6 +1208,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     console.log("[K] 📡 sendActivityEnd");
     isChildSpeakingRef.current = false;
     sessionRef.current.sendRealtimeInput({ activityEnd: {} });
+    if (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0) {
+      flushChildTurn("");
+    }
     return true;
   }, []);
 
