@@ -638,7 +638,7 @@ function MissionInner() {
     if (voice.status === "live") {
       live.setInteractionMode(isAuto ? "auto" : "manual");
     }
-  }, [voice.status, isAuto, live]);
+  }, [voice.status, isAuto, live.setInteractionMode]);
 
   const handleModeChange = useCallback((newMode: "auto" | "manual") => {
     if (newMode === "auto") {
