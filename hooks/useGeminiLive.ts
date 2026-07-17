@@ -766,6 +766,19 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
             flushChildTurn(pendingChildText);
             pendingChildText = "";
           }
+
+          // 만약 기대 대사(종료 대사 등)가 지정되어 있는데, 들어온 텍스트가 기대 대사와 전혀 매칭되지 않는다면
+          // 이는 이전 턴의 잔여 텍스트이므로 무시한다.
+          if (kTurnExpectedTextRef.current) {
+            const tempPending = pendingKText + outTx;
+            const cleanExpected = kTurnExpectedTextRef.current.replace(/\s+/g, "");
+            const cleanTemp = tempPending.replace(/\s+/g, "");
+            if (!cleanExpected.startsWith(cleanTemp) && !cleanExpected.includes(cleanTemp)) {
+              console.log("[K] Suppressed stale outputTranscription:", outTx);
+              return;
+            }
+          }
+
           pendingKText += outTx;
 
           // 프롬프트 누출 감지 — speakAsK/speakClosingLine이 안전한 원문을 지정해둔 턴에서
@@ -817,6 +830,17 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
         // ── 턴 완료 ───────────────────────────────────────────
         if (sc.turnComplete) {
+          // 만약 기대 대사(종료 대사 등)가 지정되어 있는데, 아직 기대 대사가 시작조차 안 되었거나
+          // 기대 대사의 일부가 아닌 엉뚱한 텍스트로 turnComplete가 왔다면 이는 이전 턴의 것이므로 무시한다.
+          if (kTurnExpectedTextRef.current) {
+            const cleanExpected = kTurnExpectedTextRef.current.replace(/\s+/g, "");
+            const cleanPending = pendingKText.replace(/\s+/g, "");
+            if (!cleanPending || (!cleanExpected.startsWith(cleanPending) && !cleanExpected.includes(cleanPending))) {
+              console.log("[K] Ignored stale turnComplete before expected speech finished.");
+              return;
+            }
+          }
+
           if (pendingKText) {
             const finalText = finalizeKTurnText(pendingKText);
             onTurnCompleteRef.current?.({ role: "k", text: finalText });
