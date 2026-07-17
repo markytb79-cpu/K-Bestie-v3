@@ -834,8 +834,8 @@ function MissionInner() {
     <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
       {/* 상단 고정 영역: 헤더 + 진행률 게이지 + 마스코트 (스크롤되지 않음) */}
       <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
-        <div className="flex items-center justify-center px-4 pt-4 pb-2">
-          <Link href="/child/home" className="cursor-pointer">
+        <div className="flex items-center justify-center gap-3 px-4 pt-3 pb-1">
+          <Link href="/child/home" className="cursor-pointer shrink-0">
             <Image
               src="/Images/logo/Logo.png"
               alt="내친구 케이"
@@ -845,39 +845,67 @@ function MissionInner() {
               priority
             />
           </Link>
+          {isLiveMode && !isDone && (
+            <div className="inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-full border border-gray-200 shadow-inner shrink-0">
+              <button
+                onClick={() => handleModeChange("auto")}
+                aria-pressed={isAuto}
+                aria-label="자동으로 말하기"
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all duration-300 ease-out cursor-pointer ${
+                  isAuto 
+                    ? "bg-[#1a6b5a] text-white shadow-sm" 
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                자동
+              </button>
+              <button
+                onClick={() => handleModeChange("manual")}
+                aria-pressed={!isAuto}
+                aria-label="버튼 눌러 말하기"
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all duration-300 ease-out cursor-pointer ${
+                  !isAuto 
+                    ? "bg-[#1a6b5a] text-white shadow-sm" 
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                수동
+              </button>
+            </div>
+          )}
         </div>
 
-        <div className="text-center pt-2 pb-4">
-          <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
-            {isDone ? "오늘의 미션을 완료했어요!" : isConnecting ? "케이를 부르는 중이에요…" : "케이가 듣고 있어요…"}
-          </h1>
-          <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
-            {/* missionState==="completed"(종료 발화+700ms 대기까지 실제로 끝난 시점)일 때만
-                정확한 완료 안내 문구를 표시 — completing 중엔 기존 문구 그대로 유지. */}
-            {missionState === "completed"
-              ? MISSION_CLOSING_LINE
-              : isDone
-              ? "황금열쇠를 받았어요. 내일 또 만나요! 🔑"
-              : "질문에 편하게 대답해 보세요"}
-          </p>
-
-          <div className="px-6 mt-3">
-            <p className="text-xs font-bold" style={{ color: "#1a6b5a" }}>
-              미션 진행 {missionPercent}% ({gauge}/{requiredCount})
+        {isDone && (
+          <div className="text-center pt-1.5 pb-2">
+            <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
+              오늘의 미션을 완료했어요!
+            </h1>
+            <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
+              {/* missionState==="completed"(종료 발화+700ms 대기까지 실제로 끝난 시점)일 때만
+                  정확한 완료 안내 문구를 표시 — completing 중엔 기존 문구 그대로 유지. */}
+              {missionState === "completed"
+                ? MISSION_CLOSING_LINE
+                : "황금열쇠를 받았어요. 내일 또 만나요! 🔑"}
             </p>
-            <div className="mt-1.5 h-2.5 rounded-full bg-gray-200 overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-700 ease-out"
-                style={{
-                  width: `${missionPercent}%`,
-                  background: "linear-gradient(90deg, #1a6b5a 0%, #2a8a72 100%)",
-                }}
-              />
-            </div>
+          </div>
+        )}
+
+        <div className="px-6 mt-1.5 mb-2">
+          <p className="text-xs font-bold text-center" style={{ color: "#1a6b5a" }}>
+            미션 진행 {missionPercent}% ({gauge}/{requiredCount})
+          </p>
+          <div className="mt-1 h-2 rounded-full bg-gray-200 overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-700 ease-out"
+              style={{
+                width: `${missionPercent}%`,
+                background: "linear-gradient(90deg, #1a6b5a 0%, #2a8a72 100%)",
+              }}
+            />
           </div>
         </div>
 
-        <div className="flex justify-center mb-4">
+        <div className="flex justify-center mb-2">
           <Image
             src="/Images/mascot/mascot-standing.png"
             alt="케이 마스코트"
@@ -887,37 +915,6 @@ function MissionInner() {
             priority
           />
         </div>
-
-        {isLiveMode && !isDone && (
-          <div className="flex justify-center mb-4 shrink-0">
-            <div className="inline-flex items-center gap-1.5 p-1 bg-gray-100 rounded-full border border-gray-200 shadow-inner">
-              <button
-                onClick={() => handleModeChange("auto")}
-                aria-pressed={isAuto}
-                aria-label="자동으로 말하기"
-                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-300 ease-out cursor-pointer ${
-                  isAuto 
-                    ? "bg-[#1a6b5a] text-white shadow-sm" 
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                자동 (말하면 자동으로 들어요)
-              </button>
-              <button
-                onClick={() => handleModeChange("manual")}
-                aria-pressed={!isAuto}
-                aria-label="버튼 눌러 말하기"
-                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-300 ease-out cursor-pointer ${
-                  !isAuto 
-                    ? "bg-[#1a6b5a] text-white shadow-sm" 
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                수동 (버튼을 눌러서 말해요)
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* 대화 말풍선: 이 영역만 스크롤 */}
