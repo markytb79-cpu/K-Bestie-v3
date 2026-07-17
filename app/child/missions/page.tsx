@@ -498,6 +498,7 @@ function MissionInner() {
   const switchToText = useCallback(() => {
     if (isRecordingRef.current) {
       live.sendActivityEnd();
+      live.setAudioMuted(false);
       setIsRecording(false);
       isRecordingRef.current = false;
     }
@@ -645,6 +646,7 @@ function MissionInner() {
       // 수동 발화(녹음) 중이었다면 안전하게 activityEnd 선전송
       if (isRecordingRef.current) {
         live.sendActivityEnd();
+        live.setAudioMuted(false);
         setIsRecording(false);
         isRecordingRef.current = false;
       }
@@ -662,8 +664,11 @@ function MissionInner() {
     if (!isRecordingRef.current) {
       // 첫 클릭: K가 말하는 중이면 오디오 재생 즉시 중단 후 activityStart
       live.setAudioMuted(true);
-      live.setAudioMuted(false);
-      live.sendActivityStart();
+      const success = live.sendActivityStart();
+      if (!success) {
+        live.setAudioMuted(false);
+        return;
+      }
       setIsRecording(true);
       isRecordingRef.current = true;
       recordingStartedAtRef.current = Date.now();
@@ -674,6 +679,7 @@ function MissionInner() {
         return;
       }
       live.sendActivityEnd();
+      live.setAudioMuted(false);
       setIsRecording(false);
       isRecordingRef.current = false;
       
