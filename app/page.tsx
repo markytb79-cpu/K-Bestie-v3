@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 export default function HubPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
@@ -24,8 +25,30 @@ export default function HubPage() {
           headers: { "Content-Type": "application/json" },
         });
 
+        // 401: 세션 만료 → 로그인으로
+        if (pwCheckRes.status === 401) {
+          await supabase.auth.signOut();
+          router.replace("/login");
+          return;
+        }
+
+        // 5xx: 서버 오류 → 재시도 안내 (parent/home 리디렉션 금지)
+        if (pwCheckRes.status >= 500) {
+          setApiError("서비스 초기화 중 오류가 발생했습니다. 페이지를 새로 고침하거나 다시 로그인해 주세요.");
+          setLoading(false);
+          return;
+        }
+
+        // 403/404: member account 없음 → 소셜(오너) 계정으로 간주
+        if (pwCheckRes.status === 403 || pwCheckRes.status === 404) {
+          router.replace("/parent/home");
+          return;
+        }
+
         if (!pwCheckRes.ok) {
-          throw new Error("Password change check failed");
+          setApiError("계정 정보를 불러오지 못했습니다. 다시 로그인해 주세요.");
+          setLoading(false);
+          return;
         }
 
         const pwData = await pwCheckRes.json();
@@ -88,12 +111,27 @@ export default function HubPage() {
         }
       } catch (err) {
         console.error("Hub page initialization error:", err);
-        router.replace("/parent/home");
+        setApiError("네트워크 오류가 발생했습니다. 페이지를 새로 고침해 주세요.");
+        setLoading(false);
       } finally {
         setLoading(false);
       }
     });
   }, [router]);
+
+  if (apiError) {
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center bg-gray-50 px-4">
+        <p className="text-sm text-red-500 text-center mb-4">{apiError}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 text-sm rounded-lg bg-orange-500 text-white"
+        >
+          새로 고침
+        </button>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -106,6 +144,3 @@ export default function HubPage() {
 
   return null;
 }
-
-
-

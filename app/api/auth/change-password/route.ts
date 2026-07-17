@@ -6,21 +6,31 @@ export const runtime = "nodejs";
 // GET /api/auth/change-password
 // 현재 로그인 유저의 must_change_password 상태 + username 반환
 // 첫 로그인 직후 프론트에서 호출하여 비밀번호 변경 안내 여부 결정
+// A안: service_role 없이 인증된 세션 클라이언트로 자기 행(id = auth.uid()) 조회
+// member_accounts_select RLS 정책이 이미 id = auth.uid() 를 허용하므로 service-role 불필요
 export async function GET(_req: NextRequest) {
+  // 인증된 세션 클라이언트 사용 — SUPABASE_SERVICE_ROLE_KEY 불필요
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-  const svc = createServiceClient();
-  const { data: account } = await svc
+  // member_accounts 자기 행 조회 (RLS: id = auth.uid() 허용)
+  const { data: account, error: dbError } = await supabase
     .from("member_accounts")
     .select("username, must_change_password, role, family_id")
     .eq("id", user.id)
     .maybeSingle();
 
+  if (dbError) {
+    console.error("[change-password GET] member_accounts query error:", dbError.message);
+    return NextResponse.json({ error: "서버 오류가 발생했습니다" }, { status: 500 });
+  }
+
   if (!account) {
-    // 소셜 계정 (오너) — must_change_password 해당 없음
-    return NextResponse.json({ is_member_account: false, must_change_password: false });
+    // 소셜 계정(오너) — member_accounts 행 없음, must_change_password 해당 없음
+    return NextResponse.json({ is_member_account: false, must_change_password: false }, { status: 200 });
   }
 
   return NextResponse.json({
@@ -29,7 +39,7 @@ export async function GET(_req: NextRequest) {
     username: account.username,
     role: account.role,
     family_id: account.family_id,
-  });
+  }, { status: 200 });
 }
 
 // POST /api/auth/change-password
