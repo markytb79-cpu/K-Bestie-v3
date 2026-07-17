@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getTierForChild, isDetailAllowed } from "@/lib/plan/requireDetailAccess";
+import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 export const runtime = "nodejs";
 
@@ -23,6 +24,11 @@ export async function GET(
 
   if (error || !weekly) {
     return NextResponse.json({ error: "Weekly report not found" }, { status: 404 });
+  }
+
+  const authCheck = await requireChildAccess(supabase, user.id, weekly.child_id);
+  if (!authCheck.allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const tier = await getTierForChild(weekly.child_id);

@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { MISSION_CHAT_SYSTEM_PROMPT } from "@/app/api/_lib/prompts";
+import { MISSION_CHAT_SYSTEM_PROMPT, WEEKEND_QUESTION_PROMPT } from "@/app/api/_lib/prompts";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
+import { checkConsentForSession } from "@/lib/plan/consentGuard";
+
+import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 export const runtime = "nodejs";
 
@@ -15,30 +18,48 @@ function isWeekendQuestionDay(): boolean {
   return kstDay === 4 || kstDay === 5;
 }
 
-const WEEKEND_QUESTION_PROMPT = `
-[오늘의 추가 대화 유도 — 목·금 전용]
-오늘 대화 중 자연스러운 타이밍에 딱 한 번만, 아이에게 이번 주말 계획을 가볍게 물어봐 주세요.
-아래 세 가지 중 하나를 골라 자연스럽게 물어보면 됩니다(전부 다 물어보지 않아도 됨):
-- 이번 주말에 뭐 하고 싶은지
-- 이번 주말에 뭐 먹고 싶은지
-- 부모님과 어떤 외식을 하고 싶은지
-아이가 답한 내용은 이번 주 리포트의 주말 활동 추천에 쓰일 수 있으니, 답을 들으면 짧게 공감해 주세요.
-`.trim();
+// 모델 응답에 프롬프트/지시문이 그대로 새어나온 흔적이 있는지 검사 — 감지되면 부분 절삭
+// 없이 응답 전체를 폐기하는 판단 기준으로만 쓴다(아래 POST 핸들러 참고).
+const PROMPT_LEAK_PATTERNS = [
+  /\[[^\]]*\]/, // 대괄호로 감싼 헤더/라벨
+  /라고\s*말하면\s*돼/,
+  /시스템\s*지시/,
+  /현재\s*물어봐야\s*할/,
+  /목표\s*질문/,
+];
+function containsPromptLeak(text: string): boolean {
+  return PROMPT_LEAK_PATTERNS.some((re) => re.test(text));
+}
+
+// childTurnId 기준 짧은 TTL 인메모리 캐시 — 클라이언트 쪽 레이스로 같은 아이 턴에 대해
+// 이 라우트가 중복 호출돼도 LLM을 두 번 부르지 않고 첫 응답을 재사용한다. 서버리스
+// 인스턴스별로만 유효한 best-effort 가드이며(DB 스키마 변경 없음), 주 방어선은
+// 클라이언트의 재진입 가드(app/child/missions/page.tsx)다.
+const respondCache = new Map<string, { text: string; ts: number }>();
+const RESPOND_CACHE_TTL_MS = 15_000;
+function getCachedRespond(key: string): string | null {
+  const hit = respondCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.ts > RESPOND_CACHE_TTL_MS) {
+    respondCache.delete(key);
+    return null;
+  }
+  return hit.text;
+}
+function setCachedRespond(key: string, text: string) {
+  if (respondCache.size > 200) {
+    const oldestKey = respondCache.keys().next().value;
+    if (oldestKey) respondCache.delete(oldestKey);
+  }
+  respondCache.set(key, { text, ts: Date.now() });
+}
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const missionModel = await getModelForGroup("B");
-  let ai;
-  try {
-    ai = createGenAIClient(missionModel);
-  } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
-  }
-
-  let body: { sessionId?: string; history?: HistoryTurn[]; nextQuestionText?: string };
+  let body: { sessionId?: string; history?: HistoryTurn[]; nextQuestionText?: string; childTurnId?: string };
   try {
     body = await req.json();
   } catch {
@@ -47,9 +68,46 @@ export async function POST(req: NextRequest) {
 
   const history = Array.isArray(body.history) ? body.history : [];
   const nextQuestionText = typeof body.nextQuestionText === "string" ? body.nextQuestionText.trim() : "";
+  const childTurnId = typeof body.childTurnId === "string" ? body.childTurnId : null;
 
   if (history.length === 0 || !nextQuestionText) {
     return NextResponse.json({ error: "history and nextQuestionText required" }, { status: 400 });
+  }
+  if (!body.sessionId) {
+    return NextResponse.json({ error: "sessionId required" }, { status: 400 });
+  }
+
+  const consentBlocked = await checkConsentForSession(body.sessionId);
+  if (consentBlocked) return consentBlocked;
+
+  const authService = createServiceClient();
+  const { data: session } = await authService
+    .from("chat_sessions")
+    .select("child_id")
+    .eq("id", body.sessionId)
+    .single();
+  if (!session) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
+
+  const authCheck = await requireChildAccess(authService, user.id, session.child_id);
+  if (!authCheck.allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  if (childTurnId) {
+    const cached = getCachedRespond(childTurnId);
+    if (cached !== null) {
+      return NextResponse.json({ text: cached });
+    }
+  }
+
+  const missionModel = await getModelForGroup("B");
+  let ai;
+  try {
+    ai = createGenAIClient(missionModel);
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
 
   // contents mapping (k -> model, child -> user)
@@ -76,8 +134,7 @@ export async function POST(req: NextRequest) {
   const systemInstruction = `
 ${MISSION_CHAT_SYSTEM_PROMPT}
 
-[현재 물어봐야 할 다음 목표 질문]
-${nextQuestionText}
+지금 아이에게 자연스럽게 이어서 물어봐야 할 다음 질문은 "${nextQuestionText}"예요. 이 질문의 요지를 반드시 살려서 자연스럽게 물어보세요.
 ${isWeekendQuestionDay() ? `\n${WEEKEND_QUESTION_PROMPT}` : ""}
 `.trim();
 
@@ -91,7 +148,14 @@ ${isWeekendQuestionDay() ? `\n${WEEKEND_QUESTION_PROMPT}` : ""}
       },
     });
 
-    const text = (result.text ?? "").trim();
+    let text = (result.text ?? "").trim();
+    if (!text || containsPromptLeak(text)) {
+      // 빈 응답이거나 프롬프트 누출 흔적이 있으면 일부만 잘라 쓰지 않고 응답 전체를
+      // 폐기한다 — 안전한 고정 리액션 + 순정 다음 질문 텍스트로 완전히 대체.
+      console.warn("[mission/respond] discarding leaked/empty model response, falling back to safe text");
+      text = `그렇구나! ${nextQuestionText}`;
+    }
+    if (childTurnId) setCachedRespond(childTurnId, text);
 
     const tokenIn = result.usageMetadata?.promptTokenCount;
     const tokenOut = result.usageMetadata?.candidatesTokenCount;

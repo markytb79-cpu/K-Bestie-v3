@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+
 export const runtime = "nodejs";
 
 export async function PATCH(
@@ -21,6 +23,21 @@ export async function PATCH(
 
   if (body.status !== "중지됨") {
     return NextResponse.json({ error: "Only '중지됨' update allowed" }, { status: 400 });
+  }
+
+  const { data: q, error: qErr } = await supabase
+    .from("parent_questions")
+    .select("child_id")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (qErr || !q) {
+    return NextResponse.json({ error: "Question not found" }, { status: 404 });
+  }
+
+  const authCheck = await requireChildAccess(supabase, user.id, q.child_id);
+  if (!authCheck.allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { error } = await supabase

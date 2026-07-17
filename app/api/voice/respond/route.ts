@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { pickReaction } from "@/lib/freeChatReactions";
+import { checkConsentForSession } from "@/lib/plan/consentGuard";
+import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 export const runtime = "nodejs";
 
@@ -28,6 +30,28 @@ export async function POST(req: NextRequest) {
   if (history.length === 0) {
     return NextResponse.json({ error: "history required" }, { status: 400 });
   }
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId : null;
+  if (!sessionId) {
+    return NextResponse.json({ error: "sessionId required" }, { status: 400 });
+  }
+
+  const service = createServiceClient();
+  const { data: session } = await service
+    .from("chat_sessions")
+    .select("child_id")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (!session?.child_id) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
+
+  const authCheck = await requireChildAccess(supabase, user.id, session.child_id);
+  if (!authCheck.allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const consentBlocked = await checkConsentForSession(sessionId);
+  if (consentBlocked) return consentBlocked;
 
   const lastChild = [...history].reverse().find((t) => t.role === "child" && t.text?.trim());
   if (!lastChild) {
@@ -38,19 +62,14 @@ export async function POST(req: NextRequest) {
   const reaction = pickReaction(lastChild.text.trim(), lastK?.text?.trim());
 
   if (reaction.flaggedForParent) {
-    const sessionId = typeof body.sessionId === "string" ? body.sessionId : null;
-    if (sessionId) {
-      const service = createServiceClient();
-      const { error: insertError } = await service.from("safety_events").insert({
-        session_id: sessionId,
-        subcategory: reaction.safetySubcategory,
-        child_text: lastChild.text.trim(),
-      });
-      if (insertError) {
-        console.error("[voice/respond] safety_events insert failed:", insertError.message);
-      }
-    } else {
-      console.warn("[voice/respond] SAFETY FLAG without sessionId — not persisted. user:", user.id);
+    const service = createServiceClient();
+    const { error: insertError } = await service.from("safety_events").insert({
+      session_id: sessionId,
+      subcategory: reaction.safetySubcategory,
+      child_text: lastChild.text.trim(),
+    });
+    if (insertError) {
+      console.error("[voice/respond] safety_events insert failed:", insertError.message);
     }
   }
 

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
+import { checkConsentForSession } from "@/lib/plan/consentGuard";
+import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 export const runtime = "nodejs";
 
@@ -47,9 +49,31 @@ export async function POST(req: NextRequest) {
   if (!ttsText) {
     return NextResponse.json({ error: "text empty after sanitize" }, { status: 400 });
   }
+  if (!body.sessionId) {
+    return NextResponse.json({ error: "sessionId required" }, { status: 400 });
+  }
+
+  const service = createServiceClient();
+  const { data: session } = await service
+    .from("chat_sessions")
+    .select("child_id")
+    .eq("id", body.sessionId)
+    .maybeSingle();
+
+  if (!session?.child_id) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
+
+  const authCheck = await requireChildAccess(supabase, user.id, session.child_id);
+  if (!authCheck.allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const consentBlocked = await checkConsentForSession(body.sessionId);
+  if (consentBlocked) return consentBlocked;
 
   // 비용에 영향을 주는 child_id/tier/voice_mode는 클라이언트에서 직접 받지 않고
-  // sessionId로만 서버가 해석한다(server-trust). sessionId 미전달 시 로깅만 생략.
+  // sessionId로만 서버가 해석한다(server-trust).
   const usageContext = await resolveUsageContext(body.sessionId);
 
   // voiceName을 안 넘기면 확정된 기본값(ko-KR-Wavenet-A) 사용.

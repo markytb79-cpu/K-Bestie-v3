@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,9 @@ export async function GET(
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { allowed } = await requireChildAccess(supabase, user.id, childId);
+  if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const svc = createServiceClient();
 
@@ -28,6 +32,7 @@ export async function GET(
   if (error) return NextResponse.json({ code: null });
   return NextResponse.json(data);
 }
+
 
 // POST /api/children/[id]/invite-code — 아이 초대 코드 발급
 // Body: { guardian_consent: true }

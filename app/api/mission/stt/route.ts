@@ -3,6 +3,9 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { CHILD_SPEECH_HINTS, CHILD_SPEECH_HINT_BOOST } from "@/lib/stt/childSpeechHints";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
+import { checkConsentForSession } from "@/lib/plan/consentGuard";
+
+import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 // LINEAR16/16kHz/mono 고정 인코딩 기준 — 1초 = 16000 샘플 * 2바이트
 const PCM16_BYTES_PER_SEC = 16000 * 2;
@@ -34,9 +37,30 @@ export async function POST(req: NextRequest) {
   if (!audioBase64 || typeof audioBase64 !== "string") {
     return NextResponse.json({ error: "audioBase64 required" }, { status: 400 });
   }
+  if (!body.sessionId) {
+    return NextResponse.json({ error: "sessionId required" }, { status: 400 });
+  }
+
+  const consentBlocked = await checkConsentForSession(body.sessionId);
+  if (consentBlocked) return consentBlocked;
+
+  const authService = createServiceClient();
+  const { data: session } = await authService
+    .from("chat_sessions")
+    .select("child_id")
+    .eq("id", body.sessionId)
+    .single();
+  if (!session) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
+
+  const authCheck = await requireChildAccess(authService, user.id, session.child_id);
+  if (!authCheck.allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   // 비용에 영향을 주는 child_id/tier/voice_mode는 클라이언트에서 직접 받지 않고
-  // sessionId로만 서버가 해석한다(server-trust). sessionId 미전달 시 로깅만 생략.
+  // sessionId로만 서버가 해석한다(server-trust).
   const usageContext = await resolveUsageContext(body.sessionId);
 
   try {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
@@ -11,6 +13,11 @@ export async function GET(req: NextRequest) {
   const childId = req.nextUrl.searchParams.get("childId");
   if (!childId) {
     return NextResponse.json({ error: "childId required" }, { status: 400 });
+  }
+
+  const authCheck = await requireChildAccess(supabase, user.id, childId);
+  if (!authCheck.allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const [{ data: child }, { data: sessions }] = await Promise.all([
     supabase.from("child_profiles").select("name").eq("id", childId).single(),

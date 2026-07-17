@@ -60,17 +60,34 @@ export async function earnAttendanceKey(childId: string): Promise<EarnResult> {
 }
 
 /** 미션완료 적립 — 오늘 미션완료로 이미 2개 적립했으면 스킵 */
-export async function earnMissionCompleteKey(childId: string): Promise<EarnResult> {
+export async function earnMissionCompleteKey(
+  childId: string,
+  missionId?: string,
+  rewardType: string = "mission_complete"
+): Promise<EarnResult> {
   const already = await countEarnedToday(childId, "mission");
   if (already >= MISSION_DAILY_LIMIT) return { earned: false, reason: "daily_limit_reached" };
 
   const supabase = createServiceClient();
-  const { error } = await supabase.from("gold_key_ledger").insert({
+  const insertPayload: any = {
     child_id: childId,
     reason: "mission",
     expires_at: expiresAtFromNow(),
-  });
-  if (error) throw error;
+  };
+
+  if (missionId) {
+    insertPayload.mission_id = missionId;
+    insertPayload.reward_type = rewardType;
+  }
+
+  const { error } = await supabase.from("gold_key_ledger").insert(insertPayload);
+  
+  if (error) {
+    if (error.code === "23505") {
+      return { earned: false, reason: "already_earned" };
+    }
+    throw error;
+  }
   return { earned: true };
 }
 

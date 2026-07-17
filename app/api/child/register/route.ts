@@ -33,6 +33,21 @@ export async function POST(req: NextRequest) {
   // 사용할 family_id 결정
   let resolvedFamilyId = familyId ?? null;
 
+  if (user && resolvedFamilyId) {
+    // 사용자가 해당 가족의 구성원(보호자)인지 검증 (IDOR 방어)
+    const { data: mem } = await svc
+      .from("family_members")
+      .select("id")
+      .eq("family_id", resolvedFamilyId)
+      .eq("user_id", user.id)
+      .in("role", ["owner_parent", "parent"])
+      .maybeSingle();
+
+    if (!mem) {
+      return NextResponse.json({ error: "가족에 대한 접근 권한이 없습니다" }, { status: 403 });
+    }
+  }
+
   if (user && !resolvedFamilyId) {
     // 기존 가족 조회
     const { data: mem } = await svc

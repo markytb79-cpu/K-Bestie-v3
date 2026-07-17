@@ -7,9 +7,12 @@
 //    운영 크론 경로가 아니다. 로직 변경 시 양쪽을 함께 맞춰야 한다.
 //
 // 프롬프트/모델 설정은 Next 쪽 순수 모듈을 그대로 재사용(중복 방지):
-//   - app/api/_lib/prompts.ts  (REPORT_PROMPT_TEMPLATE, WEEKLY_REPORT_PROMPT_TEMPLATE)
-//   - app/api/_lib/ai.ts       (getActiveReportModel — provider_switch_settings 미조회 시 폴백용)
+//   - app/api/_lib/prompts.ts     (REPORT_PROMPT_TEMPLATE, WEEKLY_REPORT_PROMPT_TEMPLATE)
+//   - app/api/_lib/reportModel.ts (getActiveReportModel — provider_switch_settings 미조회 시 폴백용)
 // 두 파일은 외부 import가 없는 순수 TS라 Deno에서 그대로 import 가능하다.
+// ⚠️ app/api/_lib/ai.ts는 여기서 import하면 안 된다 — @/lib/supabase/server(Next 전용 경로 별칭)에
+//    의존해서 Deno 번들링이 깨진다(과거 실제로 배포 실패한 원인). getActiveReportModel처럼 순수한
+//    설정만 필요하면 반드시 reportModel.ts에서 가져올 것.
 //
 // provider_switch_settings(그룹A)를 이 파일에서 직접 조회한다 — Next.js ai.ts의
 // getModelForGroup()은 Next 전용 createServiceClient()에 의존해 Deno에서 재사용 불가.
@@ -22,7 +25,8 @@ import {
   REPORT_PROMPT_TEMPLATE,
   WEEKLY_REPORT_PROMPT_TEMPLATE,
 } from "../../../app/api/_lib/prompts.ts";
-import { getActiveReportModel } from "../../../app/api/_lib/ai.ts";
+import { getActiveReportModel } from "../../../app/api/_lib/reportModel.ts";
+import { sanitizeReportJson } from "../../../app/api/_lib/reportSafetyGuard.ts";
 
 type ProviderId = "ai_studio" | "vertex";
 
@@ -259,7 +263,7 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
         dashboard_cards?: Record<string, string>;
       };
       try {
-        report = JSON.parse(text);
+        report = sanitizeReportJson(JSON.parse(text));
       } catch {
         throw new Error(`JSON 파싱 실패: ${text.slice(0, 100)}`);
       }
@@ -351,7 +355,7 @@ async function reduceToWeeklyReport(model: GroupAModelResolved, weekRange: strin
     .replace("{{TRANSCRIPT}}", transcriptText);
   const text = await callReportModel(model, prompt, 2048);
   try {
-    return JSON.parse(text);
+    return sanitizeReportJson(JSON.parse(text));
   } catch {
     throw new Error(`주간 리포트 JSON 파싱 실패: ${text.slice(0, 100)}`);
   }

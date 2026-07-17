@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getTierForChild, isDetailAllowed } from "@/lib/plan/requireDetailAccess";
 
+import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+
 export const runtime = "nodejs";
 
 // 이 라우트는 "일간 상세"(dashboard_cards/parent_guide 포함)를 반환하되, Care Start
@@ -33,6 +35,13 @@ export async function GET(
   const { chat_sessions, ...rest } = report as typeof report & {
     chat_sessions: { started_at: string; turn_count: number; ended_at: string | null; child_id: string } | null;
   };
+
+  if (chat_sessions?.child_id) {
+    const authCheck = await requireChildAccess(supabase, user.id, chat_sessions.child_id);
+    if (!authCheck.allowed) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
 
   let restricted = false;
   if (chat_sessions?.child_id) {

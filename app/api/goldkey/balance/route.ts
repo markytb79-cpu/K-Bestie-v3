@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getBalance } from "@/lib/goldkey/ledger";
+import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "childId required" }, { status: 400 });
   }
 
+  const { allowed } = await requireChildAccess(supabase, user.id, childId);
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   try {
     const balance = await getBalance(childId);
     return NextResponse.json({ childId, balance });
@@ -22,3 +28,4 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "잔액 조회 실패" }, { status: 500 });
   }
 }
+

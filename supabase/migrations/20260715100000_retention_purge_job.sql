@@ -28,10 +28,11 @@
 --     (SELECT count(*) FROM daily_reports   WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '30 days') AS daily_reports_count,
 --     (SELECT count(*) FROM weekly_summaries WHERE deleted_at IS NOT NULL AND deleted_at < now() - interval '30 days') AS weekly_summaries_count;
 --
--- ── (비활성) 매일 04:30 KST = 19:30 UTC 실행 예정 크론 등록 예시 ──────────────
+-- ── (비활성) 매일 08:00 KST = 23:00 UTC 실행 예정 크론 등록 예시 ──────────────
+-- daily-batch(04:00 KST)·weekly-batch(토요일 06:00 KST) 어느 쪽과도 겹치지 않도록 시각을 잡았다.
 -- select cron.schedule(
 --   'kbestie-retention-purge',
---   '30 19 * * *',
+--   '0 23 * * *',
 --   $$
 --   -- 자식 → 부모 순서로 삭제(고아 방지). deleted_at 스탬프된 것만, 30일 유예 지난 것만.
 --   delete from chat_messages
