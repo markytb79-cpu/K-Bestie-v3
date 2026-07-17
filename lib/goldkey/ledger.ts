@@ -4,6 +4,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 // 적립: 출석 1개/일 + 미션완료 최대 2개/일, 만료 = earned_at + 7일
 // 차감: FIFO(만료 임박 = expires_at 오름차순)
 // 하루 경계는 Asia/Seoul 자정 기준
+// V2 질문엔진 미션완료 보상은 record_v2_mission_answer SQL RPC가 직접 처리한다 — 이 함수는 V1 경로 및 출석/기타 용도로만 계속 쓰인다
 
 const KST_OFFSET = "+09:00";
 const EXPIRE_DAYS = 7;

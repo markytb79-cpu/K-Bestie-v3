@@ -166,6 +166,36 @@ const REQUIRED_COUNT_V2 = 10;
 const RESERVE_COUNT_V2 = 10;
 const TOTAL_COUNT_V2 = REQUIRED_COUNT_V2 + RESERVE_COUNT_V2; // 20
 
+export async function getApprovedV2Candidates(
+  grade: number,
+  roundType: RoundType
+): Promise<QuestionRow[]> {
+  const service = createServiceClient();
+  const { data: candidatesRaw, error: qErr } = await service
+    .from("mission_questions")
+    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades")
+    .eq("is_active", true)
+    .eq("clinical_status", "APPROVED")
+    .in("round_type", [roundType, "common"]);
+
+  if (qErr || !candidatesRaw) return [];
+
+  return (candidatesRaw as QuestionRow[]).filter((q) =>
+    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade)
+  );
+}
+
+/**
+ * V2 대상 APPROVED & 활성 문항 개수 조회
+ */
+export async function countApprovedV2Candidates(
+  grade: number,
+  roundType: RoundType
+): Promise<number> {
+  const candidates = await getApprovedV2Candidates(grade, roundType);
+  return candidates.length;
+}
+
 /**
  * V2 용 미션 질문 20개(기본10+예비10)를 선별해 순서 배열로 반환한다.
  * clinical_status = 'APPROVED' 이고 is_active = true 인 문항만 선택한다.
@@ -177,19 +207,7 @@ export async function selectQuestionsV2(
 ): Promise<string[]> {
   const service = createServiceClient();
 
-  // 1. 학년 + 회차 후보 (활성 질문 & 승인됨). round_type 은 해당 회차 또는 common 포함
-  const { data: candidatesRaw, error: qErr } = await service
-    .from("mission_questions")
-    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades")
-    .eq("is_active", true)
-    .eq("clinical_status", "APPROVED")
-    .in("round_type", [roundType, "common"]);
-
-  if (qErr || !candidatesRaw) return [];
-
-  const candidates = (candidatesRaw as QuestionRow[]).filter((q) =>
-    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade)
-  );
+  const candidates = await getApprovedV2Candidates(grade, roundType);
   if (candidates.length === 0) return [];
 
   // 아이의 출제이력 로드 (question_id -> 마지막 asked_at)

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { selectQuestions, selectQuestionsV2, parseGrade, type RoundType } from "@/lib/mission/selectQuestions";
+import { selectQuestions, selectQuestionsV2, parseGrade, countApprovedV2Candidates, type RoundType } from "@/lib/mission/selectQuestions";
 import { getVoiceModeForChild } from "@/lib/plan/voiceMode";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import { isQuestionEngineV2Enabled } from "@/lib/questions/feature-flags";
@@ -39,8 +39,7 @@ export async function POST(req: NextRequest) {
   const consentBlocked = await checkConsentForChild(childId);
   if (consentBlocked) return consentBlocked;
 
-  const isV2 = isQuestionEngineV2Enabled(childId);
-  const REQUIRED_COUNT = isV2 ? 10 : 5;
+  let isV2 = isQuestionEngineV2Enabled(childId);
 
   const service = createServiceClient();
 
@@ -93,10 +92,17 @@ export async function POST(req: NextRequest) {
     }
 
     const reqCount = isV2
-      ? (existingProgress?.required_valid_count ?? REQUIRED_COUNT)
-      : REQUIRED_COUNT;
+      ? (existingProgress?.required_valid_count ?? 10)
+      : 5;
 
-    if (existingProgress && (existingProgress.valid_answer_count ?? 0) < reqCount) {
+    if (existingProgress?.status === "SAFETY_PAUSED") {
+      return NextResponse.json(
+        { error: "Mission is safety paused pending review", status: "SAFETY_PAUSED", sessionId: existingSession.id },
+        { status: 423 }
+      );
+    }
+
+    if (existingProgress && (existingProgress.valid_answer_count ?? 0) < reqCount && existingProgress.status !== "COMPLETED") {
       const existingIds: string[] = existingProgress.question_ids ?? [];
       const { data: existingQuestions, error: existingQuestionsErr } = await service
         .from("mission_questions")
@@ -149,6 +155,16 @@ export async function POST(req: NextRequest) {
   if (grade === null) {
     return NextResponse.json({ error: "Cannot parse child grade" }, { status: 400 });
   }
+
+  // 승인+활성 문항 부족 시 V1 폴백
+  if (isV2) {
+    const candidatesCount = await countApprovedV2Candidates(grade, roundType);
+    if (candidatesCount < 20) {
+      isV2 = false;
+    }
+  }
+
+  const REQUIRED_COUNT = isV2 ? 10 : 5;
 
   // 출제 질문 선별
   let questionIds: string[] = [];

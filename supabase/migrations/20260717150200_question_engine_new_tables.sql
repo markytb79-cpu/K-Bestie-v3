@@ -113,15 +113,12 @@ CREATE POLICY "service_all_answer_evidence"
   ON answer_evidence FOR ALL
   USING (auth.role() = 'service_role');
 
-CREATE POLICY "parent_read_answer_evidence"
+DROP POLICY IF EXISTS "parent_read_answer_evidence" ON answer_evidence;
+CREATE POLICY "admin_read_answer_evidence"
   ON answer_evidence FOR SELECT
   USING (
     auth.role() = 'service_role'
-    OR EXISTS (
-      SELECT 1 FROM child_profiles cp
-      JOIN family_members fm ON fm.family_id = cp.family_id
-      WHERE cp.id = answer_evidence.child_id AND fm.user_id = auth.uid()
-    )
+    OR get_admin_role(auth.uid()) IS NOT NULL
   );
 
 -- (c) evidence_card_links RLS
@@ -131,17 +128,12 @@ CREATE POLICY "service_all_evidence_card_links"
   ON evidence_card_links FOR ALL
   USING (auth.role() = 'service_role');
 
-CREATE POLICY "parent_read_evidence_card_links"
+DROP POLICY IF EXISTS "parent_read_evidence_card_links" ON evidence_card_links;
+CREATE POLICY "admin_read_evidence_card_links"
   ON evidence_card_links FOR SELECT
   USING (
     auth.role() = 'service_role'
-    OR EXISTS (
-      SELECT 1 FROM daily_reports dr
-      JOIN chat_sessions cs ON cs.id = dr.session_id
-      JOIN child_profiles cp ON cp.id = cs.child_id
-      JOIN family_members fm ON fm.family_id = cp.family_id
-      WHERE dr.id = evidence_card_links.daily_report_id AND fm.user_id = auth.uid()
-    )
+    OR get_admin_role(auth.uid()) IS NOT NULL
   );
 
 -- (d) question_review_history RLS
