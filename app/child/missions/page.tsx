@@ -452,6 +452,34 @@ function MissionInner() {
 
   getTranscriptRef.current = voice.getTranscript;
 
+  const [autoStartFailed, setAutoStartFailed] = useState(false);
+  const hasAutoStartedRef = useRef(false);
+
+  // 자동 모드일 때 첫 진입 시 자동으로 Live 음성 세션 시작
+  useEffect(() => {
+    if (
+      isLiveMode &&
+      phase === "ready" &&
+      mode === "voice" &&
+      isAuto &&
+      voice.status !== "live" &&
+      voice.status !== "connecting" &&
+      !hasAutoStartedRef.current
+    ) {
+      hasAutoStartedRef.current = true;
+      void voice.startSession();
+    }
+  }, [isLiveMode, phase, mode, isAuto, voice.status, voice]);
+
+  // 세션 상태 감시 및 자동 시작 실패 감지
+  useEffect(() => {
+    if (voice.status === "live" || voice.status === "connecting") {
+      setAutoStartFailed(false);
+    } else if (hasAutoStartedRef.current && voice.status === "error") {
+      setAutoStartFailed(true);
+    }
+  }, [voice.status]);
+
   const askQuestion = useCallback((idx: number, customText?: string) => {
     const q = questionsRef.current[idx];
     if (!q) return;
@@ -771,7 +799,7 @@ function MissionInner() {
 
   // 음성 세션 자체가 끊긴 경우(예: Vertex Live 연결 실패) — 기술 오류 문구 대신
   // voice.error에 담긴 아이용 안내 문구만 보여준다(Plan7 §2, fallback 없음).
-  if (voice.status === "error") {
+  if (voice.status === "error" && !autoStartFailed) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "#fafaf8" }}>
         <p className="text-5xl">🌙</p>
@@ -895,7 +923,7 @@ function MissionInner() {
           <div className="flex items-center justify-center h-full text-center p-4">
             <p className="text-xs leading-relaxed" style={{ color: "#9ca3af" }}>
               {isAuto
-                ? "시작 버튼을 한 번 누르면 이후 케이가 자동으로 들어요 🌿"
+                ? "케이가 자동으로 들을 준비를 하고 있어요 🌿"
                 : "세션 시작 뒤 말하기 버튼을 사용해 말해요 🌿"}
             </p>
           </div>
@@ -988,9 +1016,12 @@ function MissionInner() {
             )
           )}
 
-          {!isLive && !isConnecting && !isDone && (
+          {!isLive && !isConnecting && !isDone && (!isAuto || autoStartFailed) && (
             <button
-              onClick={() => voice.startSession()}
+              onClick={() => {
+                setAutoStartFailed(false);
+                voice.startSession();
+              }}
               className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
               style={{ background: "#e8845a" }}
               aria-label="미션 시작"
