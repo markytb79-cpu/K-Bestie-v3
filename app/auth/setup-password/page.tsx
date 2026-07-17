@@ -33,7 +33,16 @@ function SetupPasswordForm() {
         body: JSON.stringify({ new_password: password })
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error("서버 응답 파싱에 실패했습니다.");
+        }
+      }
+
       if (!res.ok) {
         throw new Error(data.error || "비밀번호 변경에 실패했습니다.");
       }
@@ -60,7 +69,16 @@ function SetupPasswordForm() {
         body: JSON.stringify({ skip: true })
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error("서버 응답 파싱에 실패했습니다.");
+        }
+      }
+
       if (!res.ok) {
         throw new Error(data.error || "비밀번호 유지를 처리하지 못했습니다.");
       }

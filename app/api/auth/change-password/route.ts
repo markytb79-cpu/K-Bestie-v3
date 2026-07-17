@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -61,14 +61,18 @@ export async function POST(req: NextRequest) {
   }
 
   const { new_password, skip } = body;
-  const svc = createServiceClient();
 
-  // ── member_accounts 계정인지 확인 ────────────────────────────────
-  const { data: account } = await svc
+  // ── member_accounts 계정인지 확인 (supabase 클라이언트 사용) ─────
+  const { data: account, error: checkError } = await supabase
     .from("member_accounts")
     .select("id")
     .eq("id", user.id)
     .maybeSingle();
+
+  if (checkError) {
+    return NextResponse.json({ error: checkError.message }, { status: 500 });
+  }
+
   if (!account) {
     return NextResponse.json(
       { error: "소셜 계정은 이 API를 사용할 수 없습니다" },
@@ -76,12 +80,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── 비밀번호 변경 (skip이 아닌 경우) ─────────────────────────────
+  // ── 비밀번호 변경 (skip이 아닌 경우) (일반 auth.updateUser API 사용) ──────
   if (!skip) {
     if (!new_password || new_password.length < 6) {
       return NextResponse.json({ error: "비밀번호는 6자 이상이어야 합니다" }, { status: 400 });
     }
-    const { error: authError } = await svc.auth.admin.updateUserById(user.id, {
+    const { error: authError } = await supabase.auth.updateUser({
       password: new_password,
     });
     if (authError) {
@@ -89,11 +93,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── must_change_password 플래그 해제 ─────────────────────────────
-  await svc
+  // ── must_change_password 플래그 해제 (supabase 클라이언트 사용) ───
+  const { error: updateError } = await supabase
     .from("member_accounts")
     .update({ must_change_password: false })
     .eq("id", user.id);
+
+  if (updateError) {
+    return NextResponse.json({ error: `상태 업데이트 실패: ${updateError.message}` }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true });
 }
