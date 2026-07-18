@@ -439,6 +439,8 @@ export default function ParentSettingsPage() {
     setAddError(null);
   };
 
+  const additionalGuardianCount = familyMembers.filter(m => m.role === "parent").length;
+
   return (
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
@@ -647,9 +649,9 @@ export default function ParentSettingsPage() {
 
             {activeMenu === "family_members" && (
               <div className="pt-3 border-t border-gray-100 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
-                {/* 닉네임 설정 */}
+                {/* [내 이름 설정 섹션] - 본인 프로필 수정 (항상 노출) */}
                 <div className="flex flex-col gap-2 p-3 bg-gray-50/50 rounded-xl border border-gray-150">
-                  <p className="text-[10px] font-bold text-gray-500">내 보호자 이름 수정</p>
+                  <p className="text-[10px] font-bold text-gray-500">내 이름 수정</p>
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -701,41 +703,72 @@ export default function ParentSettingsPage() {
                   </div>
                 </div>
 
-                {/* 가족 구성원 보호자 리스트 */}
-                <div className="flex flex-col gap-2 p-3 bg-gray-50/50 rounded-xl border border-gray-150">
-                  <p className="text-[10px] font-bold text-gray-500">가족 구성원 보호자</p>
-                  <div className="flex flex-col gap-1.5">
-                    {familyMembers.filter(m => m.role !== "child").map((m) => (
-                      <div key={m.memberId} className="flex justify-between items-center bg-white border border-gray-100 rounded-xl p-2.5">
-                        <div>
-                          <p className="text-xs font-bold text-gray-800">{m.displayName} ({m.role === "owner_parent" ? "오너" : "배우자"})</p>
-                          <p className="text-[9px] text-gray-400">{m.parentEmail || m.username}</p>
-                        </div>
+                {/* [가족 구성원 보호자 리스트 및 초대 섹션] */}
+                {(additionalGuardianCount >= 1 || sentInvites.length > 0 || isOwner) && (
+                  <div className="flex flex-col gap-2 p-3 bg-gray-50/50 rounded-xl border border-gray-150">
+                    <p className="text-[10px] font-bold text-gray-500">가족 구성원 보호자</p>
+                    
+                    {/* 1. 이미 등록된 보호자가 1명 이상인 경우 기존 리스트 표시 */}
+                    {additionalGuardianCount >= 1 && (
+                      <div className="flex flex-col gap-1.5">
+                        {familyMembers.filter(m => m.role !== "child").map((m) => (
+                          <div key={m.memberId} className="flex justify-between items-center bg-white border border-gray-100 rounded-xl p-2.5">
+                            <div>
+                              <p className="text-xs font-bold text-gray-800">{m.displayName} ({m.role === "owner_parent" ? "오너" : "배우자"})</p>
+                              <p className="text-[9px] text-gray-400">{m.parentEmail || m.username}</p>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    )}
 
-                  {isOwner && familyMembers.filter(m => m.role !== "child").length < 2 && (
-                    <div className="mt-2 pt-2 border-t border-gray-100">
-                      <p className="text-[9px] text-gray-400 mb-1.5">보호자(배우자) 이메일 초대</p>
-                      <form onSubmit={handleInviteParent} className="flex gap-2">
-                        <input
-                          type="email"
-                          placeholder="spouse@example.com"
-                          value={inviteEmail}
-                          onChange={(e) => setInviteEmail(e.target.value)}
-                          className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-xl outline-none bg-white"
-                        />
-                        <button
-                          type="submit"
-                          className="px-4 py-1.5 bg-[#1a6b5a] text-white text-xs font-bold rounded-xl active:scale-95 transition-transform"
-                        >
-                          초대
-                        </button>
-                      </form>
-                    </div>
-                  )}
-                </div>
+                    {/* 2. 등록된 배우자가 없고, 대기 중인 초대가 있는 경우 대기 UI 표시 */}
+                    {additionalGuardianCount === 0 && sentInvites.length > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        {sentInvites.map((invite) => (
+                          <div key={invite.id} className="flex justify-between items-center bg-white border border-gray-100 rounded-xl p-2.5">
+                            <div>
+                              <p className="text-xs font-bold text-gray-800">{invite.target_email}</p>
+                              <p className="text-[9px] text-gray-400">초대 일시: {invite.created_at ? new Date(invite.created_at).toLocaleDateString() : ""}</p>
+                            </div>
+                            <span className="text-[9px] bg-yellow-50 text-yellow-600 font-bold px-2 py-1 rounded-lg text-center shrink-0">
+                              초대 대기중
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 3. 등록된 배우자도 없고 대기 중인 초대도 없을 때, 오너이면 안내 문구 표시 */}
+                    {additionalGuardianCount === 0 && sentInvites.length === 0 && isOwner && (
+                      <p className="text-[11px] text-gray-500 py-1">
+                        아직 연결된 다른 보호자가 없습니다. 보호자를 초대해보세요!
+                      </p>
+                    )}
+
+                    {/* 4. 초대 폼 (isOwner이고 배우자 초대가 가능한 상태인 경우 그대로 유지) */}
+                    {isOwner && familyMembers.filter(m => m.role !== "child").length < 2 && (
+                      <div className="mt-2 pt-2 border-t border-gray-100">
+                        <p className="text-[9px] text-gray-400 mb-1.5">보호자(배우자) 이메일 초대</p>
+                        <form onSubmit={handleInviteParent} className="flex gap-2">
+                          <input
+                            type="email"
+                            placeholder="spouse@example.com"
+                            value={inviteEmail}
+                            onChange={(e) => setInviteEmail(e.target.value)}
+                            className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-xl outline-none bg-white"
+                          />
+                          <button
+                            type="submit"
+                            className="px-4 py-1.5 bg-[#1a6b5a] text-white text-xs font-bold rounded-xl active:scale-95 transition-transform"
+                          >
+                            초대
+                          </button>
+                        </form>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
