@@ -121,7 +121,9 @@ export type ConsumeResult =
 /**
  * FIFO(만료 임박 우선)로 count개 소비.
  * 잔액 부족이면 아무것도 소비하지 않고 실패 반환.
- * 동시성: consumed=false 조건부 update로 이미 소비된 행 재사용 방지.
+ * 내부적으로 원자적 RPC(consume_gold_keys)를 호출한다 — child_id 단위 advisory lock +
+ * 결정론적 FOR UPDATE로 동시 요청 간 레이스를 DB 트랜잭션 안에서 차단한다(기존 조건부 UPDATE 방식의
+ * "부분 소비 후 실패 보고" 결함을 구조적으로 제거).
  */
 export async function consumeKeys(childId: string, count: number): Promise<ConsumeResult> {
   if (!Number.isInteger(count) || count <= 0) {
@@ -129,39 +131,27 @@ export async function consumeKeys(childId: string, count: number): Promise<Consu
   }
 
   const supabase = createServiceClient();
-  const nowIso = new Date().toISOString();
+  // 이 경로는 놀이 세션이 없는 일반 소비이므로 매 호출마다 새 idempotency_key를 생성한다
+  // (호출부가 재시도 시 동일 키를 넘길 방법이 없어 이 경로 자체의 네트워크-재시도 멱등성은 보장하지
+  // 않는다 — 기존 consumeKeys()도 이 보장이 없었으므로 회귀 아님. play_session 기반 소비는 KY 쪽에서
+  // 별도로 consume_gold_keys를 p_idempotency_key=play_session_id 등으로 직접 호출해 멱등성을 얻는다).
+  const idempotencyKey = `consumeKeys:${childId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 
-  // 만료 임박순으로 후보 행 선점 (필요 개수만)
-  const { data: rows, error: fetchErr } = await supabase
-    .from("gold_key_ledger")
-    .select("id")
-    .eq("child_id", childId)
-    .eq("consumed", false)
-    .gt("expires_at", nowIso)
-    .order("expires_at", { ascending: true })
-    .limit(count);
+  const { data, error } = await supabase.rpc("consume_gold_keys", {
+    p_child_id: childId,
+    p_amount: count,
+    p_idempotency_key: idempotencyKey,
+    p_play_session_id: null,
+  });
 
-  if (fetchErr) throw fetchErr;
-  if (!rows || rows.length < count) {
-    return { ok: false, reason: "insufficient", balance: await getBalance(childId) };
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error("consume_gold_keys returned no rows");
+
+  const result = data[0] as { success: boolean; consumed_count: number; balance: number; header_id: string; reason: string };
+
+  if (!result.success) {
+    return { ok: false, reason: result.reason === "insufficient_balance" ? "insufficient" : "invalid_count", balance: result.balance };
   }
 
-  const ids = rows.map((r) => r.id);
-  // consumed=false 조건부 update — 경합 시 이미 소비된 행은 갱신되지 않음
-  const { data: updated, error: updErr } = await supabase
-    .from("gold_key_ledger")
-    .update({ consumed: true, consumed_at: nowIso })
-    .in("id", ids)
-    .eq("consumed", false)
-    .select("id");
-
-  if (updErr) throw updErr;
-
-  const consumed = updated?.length ?? 0;
-  if (consumed < count) {
-    // 경합으로 일부만 소비됨 — 소비한 만큼은 유지(원장 특성상 롤백 불가), 부족분 알림
-    return { ok: false, reason: "insufficient", balance: await getBalance(childId) };
-  }
-
-  return { ok: true, consumed, balance: await getBalance(childId) };
+  return { ok: true, consumed: result.consumed_count, balance: result.balance };
 }
