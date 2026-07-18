@@ -148,27 +148,40 @@ export async function syncChildrenFromDB(): Promise<void> {
       return;
     }
 
-    // 우선 첫 번째 가족을 활성 가족으로 선택
-    const activeFamily = families[0];
-    const familyId = activeFamily.family_id;
-    const familyName = activeFamily.families?.name ?? "";
-
-    // 2. 가족 상세 정보 조회 (아이 프로필 목록 포함)
-    const famDetailRes = await fetch(`/api/families/${familyId}`);
-    if (!famDetailRes.ok) return;
-    const { family } = (await famDetailRes.json()) as {
-      family: {
+    type FamilyDetail = {
+      id: string;
+      name: string;
+      child_profiles: Array<{
         id: string;
         name: string;
-        child_profiles: Array<{
-          id: string;
-          name: string;
-          grade: string;
-          interests: string[];
-          created_at: string;
-        }>;
-      };
+        grade: string;
+        interests: string[];
+        created_at: string;
+      }>;
     };
+
+    // 2. 아이가 있는 가족을 우선 선택한다. 모두 비어 있으면 joined_at 기준 첫 가족을
+    // 유지해 온보딩 반복으로 생긴 빈 중복 가족을 선택하지 않던 기존 동작을 보존한다.
+    let activeFamily = families[0];
+    let family: FamilyDetail | null = null;
+    for (const candidate of families) {
+      const famDetailRes = await fetch(`/api/families/${candidate.family_id}`);
+      if (!famDetailRes.ok) {
+        if (candidate === families[0]) return;
+        continue;
+      }
+      const detail = (await famDetailRes.json()) as { family: FamilyDetail };
+      if (!family) family = detail.family;
+      if ((detail.family.child_profiles ?? []).length > 0) {
+        activeFamily = candidate;
+        family = detail.family;
+        break;
+      }
+    }
+    if (!family) return;
+
+    const familyId = activeFamily.family_id;
+    const familyName = activeFamily.families?.name ?? family.name ?? "";
 
     const children: StoreChild[] = (family.child_profiles ?? []).map((cp) => ({
       id: cp.id,
