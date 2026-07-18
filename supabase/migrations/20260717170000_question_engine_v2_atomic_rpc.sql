@@ -91,9 +91,9 @@ BEGIN
   SET question_states = v_updated_states,
       valid_answer_count = v_valid_count,
       updated_at = now(),
-      status = CASE WHEN v_newly_completed THEN 'COMPLETED' ELSE status END
+      status = CASE WHEN v_newly_completed THEN 'COMPLETED' ELSE mission_progress.status END
   WHERE session_id = p_session_id
-  RETURNING status INTO v_progress_status;
+  RETURNING mission_progress.status INTO v_progress_status;
 
   -- 10. 새로 완료된 경우 보상 및 정리 작업
   IF v_newly_completed THEN
