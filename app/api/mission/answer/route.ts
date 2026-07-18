@@ -7,6 +7,11 @@ import { isQuestionEngineV2Enabled } from "@/lib/questions/feature-flags";
 import { classifyAnswer } from "@/lib/questions/answer-classifier";
 import { pickReaction } from "@/lib/freeChatReactions";
 
+// 컬럼 정의 통일:
+// - answer_status: 레거시 상태값(answered/skipped/refused). UI 하위호환을 위해 계속 기록되지만 더 이상 진행률 판정의 권위값이 아니다.
+// - answer_classification: 질문 엔진 V2의 최종 판정 source of truth(VALID/PARTIAL/REFUSAL/NO_RESPONSE/SAFETY_SIGNAL). progress_awarded와 함께 서버 진행률 계산의 기준이 된다.
+// - progress_awarded: 이 답변이 실제로 진행률에 반영됐는지 여부(boolean).
+
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 export const runtime = "nodejs";
@@ -96,20 +101,39 @@ export async function POST(req: NextRequest) {
   if (consentBlocked) return consentBlocked;
 
   // 기능 플래그 및 코호트 체크 (진행상태 로드 전으로 당김)
-  const isV2 = isQuestionEngineV2Enabled(session.child_id);
+  const isV2Flag = isQuestionEngineV2Enabled(session.child_id);
+
+  // 1) status만 먼저 단독 조회 — isV2Flag와 무관하게 항상 실행, SAFETY_PAUSED/COMPLETED면 즉시 차단
+  const { data: statusRow, error: statusErr } = await service
+    .from("mission_progress")
+    .select("status")
+    .eq("session_id", sessionId)
+    .single();
+
+  if (statusErr || !statusRow) {
+    console.error("[answer/route] status query failed:", statusErr);
+    return NextResponse.json({ error: "Mission progress not found" }, { status: 404 });
+  }
+
+  if (statusRow.status === "SAFETY_PAUSED" || statusRow.status === "COMPLETED") {
+    const resPayload = { error: "Mission is already completed or safety paused", status: statusRow.status };
+    if (childTurnId) setCachedAnswer(childTurnId, resPayload);
+    return NextResponse.json(resPayload, { status: 423 });
+  }
 
   interface MissionProgressRow {
     session_id: string;
     valid_answer_count: number | null;
     question_ids: string[] | null;
     question_states: Record<string, QuestionState> | null;
-    status?: string | null;
     updated_at?: string | null;
+    required_valid_count?: number | null;
+    engine_version?: string | null;
   }
 
-  // isV2 여부에 따라 select fields 분리 (V1 경로에서 신규 컬럼 select 방지)
-  const fields = isV2
-    ? "session_id, valid_answer_count, question_ids, question_states, status"
+  // 2) 나머지 필드 조회 — required_valid_count/engine_version은 isV2Flag가 true로 확정된 경우에만 포함
+  const fields = isV2Flag
+    ? "session_id, valid_answer_count, question_ids, question_states, required_valid_count, engine_version"
     : "session_id, valid_answer_count, question_ids, question_states";
 
   // 진행상태 로드
@@ -124,12 +148,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Mission progress not found" }, { status: 404 });
   }
 
-  // SAFETY_PAUSED 또는 COMPLETED 상태인 경우 423으로 즉시 반환하며 차단
-  if (isV2 && (progress.status === "SAFETY_PAUSED" || progress.status === "COMPLETED")) {
-    const resPayload = { error: "Mission is already completed or safety paused", status: progress.status };
-    if (childTurnId) setCachedAnswer(childTurnId, resPayload);
-    return NextResponse.json(resPayload, { status: 423 });
-  }
+  const isSessionV2 = isV2Flag && progress.engine_version === "v2";
+  const requiredCount = isSessionV2 ? (progress.required_valid_count ?? 10) : REQUIRED_COUNT;
 
   const questionIds: string[] = progress.question_ids ?? [];
   if (!questionIds.includes(questionId)) {
@@ -139,7 +159,7 @@ export async function POST(req: NextRequest) {
   const states: Record<string, QuestionState> = { ...(progress.question_states ?? {}) };
   const prevState = states[questionId] ?? "pending";
 
-  if (isV2) {
+  if (isSessionV2) {
     // ------------------ 신규 V2 질문엔진 로직 ------------------
     
     // 현재까지 asked_order가 세팅된 행의 개수 조회
@@ -185,67 +205,28 @@ export async function POST(req: NextRequest) {
 
     const classification = await classifyAnswer(questionText, answerText);
 
-    // 1. SAFETY_SIGNAL 판정 시 즉시 중단 처리
+    // 1. SAFETY_SIGNAL 판정 시 즉시 중단 처리 (RPC 호출로 일괄 대체)
     if (classification === "SAFETY_SIGNAL") {
-      const { error: updProgErr } = await service
-        .from("mission_progress")
-        .update({
-          status: "SAFETY_PAUSED",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("session_id", sessionId);
-
-      if (updProgErr) {
-        console.error("[answer/route] Failed to update progress to SAFETY_PAUSED:", updProgErr);
-        return NextResponse.json({ error: "Database error" }, { status: 500 });
-      }
-
-      // 이번 질문 이력에 SAFETY_SIGNAL 기록 (asked_order는 현재 턴의 순번을 넣어줄 수 있으나 일단 Null 또는 기존 값 유지)
-      const { data: histRow, error: histRowErr } = await service
-        .from("mission_question_history")
-        .insert({
-          child_id: session.child_id,
-          question_id: questionId,
-          answer_status: "skipped",
-          answer_classification: "SAFETY_SIGNAL",
-          session_id: sessionId,
-        })
-        .select("id")
-        .single();
-
-      if (histRowErr) {
-        console.error("[answer/route] Failed to insert safety history:", histRowErr);
-        return NextResponse.json({ error: "Database error" }, { status: 500 });
-      }
-
-      // 남은 사전선택 질문 UNUSED 마킹 -> termination_reason: "SAFETY_PAUSED" (요구사항 3, 4)
-      const { error: markErr } = await service
-        .from("mission_question_history")
-        .update({ termination_reason: "SAFETY_PAUSED" })
-        .eq("child_id", session.child_id)
-        .eq("session_id", sessionId)
-        .eq("question_role", "RESERVE")
-        .is("asked_order", null);
-
-      if (markErr) {
-        console.error("[answer/route] Failed to mark unused questions as SAFETY_PAUSED:", markErr);
-        return NextResponse.json({ error: "Database error" }, { status: 500 });
-      }
-
-      // safety_events 기록 호출 (source=QUESTION_ENGINE 태그 포함)
       const reaction = pickReaction(answerText);
-      const { error: safetyEventErr } = await service.from("safety_events").insert({
-        session_id: sessionId,
-        subcategory: reaction.safetySubcategory || "violence",
-        child_text: answerText,
-        source: "QUESTION_ENGINE",
-        child_id: session.child_id,
-        question_history_id: histRow?.id ?? null,
+      const { data: rpcData, error: rpcErr } = await service.rpc("record_v2_safety_pause", {
+        p_session_id: sessionId,
+        p_child_id: session.child_id,
+        p_question_id: questionId,
+        p_answer_text: answerText,
+        p_safety_subcategory: reaction.safetySubcategory || "violence",
       });
 
-      if (safetyEventErr) {
-        console.error("[answer/route] Failed to insert safety event:", safetyEventErr);
+      if (rpcErr || !rpcData || rpcData.length === 0) {
+        console.error("[answer/route] record_v2_safety_pause RPC error:", rpcErr);
         return NextResponse.json({ error: "Database error" }, { status: 500 });
+      }
+
+      const rpcResult = rpcData[0] as { blocked: boolean; history_id: string };
+
+      if (rpcResult.blocked) {
+        const resPayload = { error: "Mission is already completed or safety paused", status: "SAFETY_PAUSED" };
+        if (childTurnId) setCachedAnswer(childTurnId, resPayload);
+        return NextResponse.json(resPayload, { status: 423 });
       }
 
       const resPayload = {
@@ -256,7 +237,7 @@ export async function POST(req: NextRequest) {
         questionState: "skipped" as const,
         validAnswerCount: progress.valid_answer_count ?? 0,
         progressPercent: (progress.valid_answer_count ?? 0) * 10,
-        requiredCount: 10,
+        requiredCount: requiredCount,
         completed: false,
         engine_version: "v2",
         questionStates: states,
@@ -322,7 +303,7 @@ export async function POST(req: NextRequest) {
           questionState: newState,
           validAnswerCount: progress.valid_answer_count ?? 0,
           progressPercent: (progress.valid_answer_count ?? 0) * 10,
-          requiredCount: 10,
+          requiredCount: requiredCount,
           completed: false,
           engine_version: "v2",
           questionStates: states,
@@ -337,144 +318,39 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // answered -> skipped/refused 등 역전 시 progress_awarded 복구
-    if (prevState === "answered" && newState !== "answered") {
-      const { error: rollbackAwardedErr } = await service
-        .from("mission_question_history")
-        .update({ progress_awarded: false })
-        .eq("child_id", session.child_id)
-        .eq("session_id", sessionId)
-        .eq("question_id", questionId)
-        .eq("progress_awarded", true);
-
-      if (rollbackAwardedErr) {
-        console.error("[answer/route] Failed to rollback progress_awarded:", rollbackAwardedErr);
-        return NextResponse.json({ error: "Database error" }, { status: 500 });
-      }
-    }
-
-    // progress_awarded 계산
-    const progressAwarded = prevState !== "answered" && newState === "answered";
-
-    // 이번 질문 이력 기록
-    const { error: histInsertErr } = await service.from("mission_question_history").insert({
-      child_id: session.child_id,
-      question_id: questionId,
-      answer_status: answerStatus,
-      answer_classification: classification,
-      progress_awarded: progressAwarded,
-      session_id: sessionId,
+    // VALID/REFUSAL/NO_RESPONSE 판정 시 record_v2_mission_answer RPC 호출
+    const { data: rpcData, error: rpcErr } = await service.rpc("record_v2_mission_answer", {
+      p_session_id: sessionId,
+      p_child_id: session.child_id,
+      p_question_id: questionId,
+      p_answer_status: answerStatus,
+      p_answer_classification: classification,
+      p_required_valid_count: requiredCount,
+      p_reward_type: "mission_complete",
     });
 
-    if (histInsertErr) {
-      console.error("[answer/route] Failed to insert question history:", histInsertErr);
+    if (rpcErr || !rpcData || rpcData.length === 0) {
+      console.error("[answer/route] record_v2_mission_answer RPC error:", rpcErr);
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
 
-    states[questionId] = newState;
+    const rpcResult = rpcData[0] as {
+      blocked: boolean;
+      valid_answer_count: number;
+      completed: boolean;
+      newly_completed: boolean;
+      reward_status: string;
+      status: string;
+      question_states: Record<string, string>;
+    };
 
-    // V2 진행률 계산: answer_classification & progress_awarded 기준 (요구사항 5)
-    const { data: awardedRows, error: countErr } = await service
-      .from("mission_question_history")
-      .select("id")
-      .eq("session_id", sessionId)
-      .eq("answer_classification", "VALID")
-      .eq("progress_awarded", true);
-
-    if (countErr) {
-      console.error("[answer/route] Failed to count awarded progress:", countErr);
-      return NextResponse.json({ error: "Database error" }, { status: 500 });
+    if (rpcResult.blocked) {
+      const resPayload = { error: "Mission is already completed or safety paused", status: rpcResult.status };
+      if (childTurnId) setCachedAnswer(childTurnId, resPayload);
+      return NextResponse.json(resPayload, { status: 423 });
     }
 
-    const validCount = awardedRows ? awardedRows.length : 0;
-    const wasCompletedV2 = progress.status === "COMPLETED";
-    const completedV2 = validCount >= 10;
-    const isFinalCompleted = completedV2 && !wasCompletedV2;
-
-    let currentProgress = progress;
-    let currentStates = states;
-    let success = false;
-    let finalValidCount = validCount;
-    let finalCompletedV2 = completedV2;
-    let finalIsFinalCompleted = isFinalCompleted;
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const updatePayload: any = {
-        question_states: currentStates,
-        valid_answer_count: finalValidCount,
-        updated_at: new Date().toISOString(),
-      };
-      if (finalCompletedV2) {
-        updatePayload.status = "COMPLETED";
-      }
-
-      let query = service
-        .from("mission_progress")
-        .update(updatePayload)
-        .eq("session_id", sessionId);
-
-      if (currentProgress.valid_answer_count === null) {
-        query = query.is("valid_answer_count", null);
-      } else {
-        query = query.eq("valid_answer_count", currentProgress.valid_answer_count);
-      }
-      
-      query = query.neq("status", "COMPLETED");
-
-      const { data: updatedRows, error: updateErr } = await query.select("session_id");
-
-      if (updateErr) {
-        console.error(`[answer/route] Failed to update progress (attempt ${attempt + 1}):`, updateErr);
-        return NextResponse.json({ error: "Database error" }, { status: 500 });
-      }
-
-      if (updatedRows && updatedRows.length > 0) {
-        success = true;
-        break;
-      }
-
-      console.warn(`[answer/route] Optimistic lock conflict on mission_progress update. Retrying... (attempt ${attempt + 1})`);
-
-      const { data: latestProgress, error: fetchErr } = await service
-        .from("mission_progress")
-        .select("session_id, valid_answer_count, question_ids, question_states, status")
-        .eq("session_id", sessionId)
-        .single();
-
-      if (fetchErr || !latestProgress) {
-        console.error("[answer/route] Failed to refetch latest progress during retry:", fetchErr);
-        return NextResponse.json({ error: "Database error" }, { status: 500 });
-      }
-
-      if (latestProgress.status === "SAFETY_PAUSED" || latestProgress.status === "COMPLETED") {
-        return NextResponse.json({ error: "Mission is already completed or safety paused", status: latestProgress.status }, { status: 423 });
-      }
-
-      currentProgress = latestProgress;
-      currentStates = { ...(latestProgress.question_states ?? {}), [questionId]: newState };
-
-      const { data: awardedRows, error: retryCountErr } = await service
-        .from("mission_question_history")
-        .select("id")
-        .eq("session_id", sessionId)
-        .eq("answer_classification", "VALID")
-        .eq("progress_awarded", true);
-
-      if (retryCountErr) {
-        console.error("[answer/route] Failed to count awarded progress on retry:", retryCountErr);
-        return NextResponse.json({ error: "Database error" }, { status: 500 });
-      }
-
-      finalValidCount = awardedRows ? awardedRows.length : 0;
-      const wasCompletedV2 = latestProgress.status === "COMPLETED";
-      finalCompletedV2 = finalValidCount >= 10;
-      finalIsFinalCompleted = finalCompletedV2 && !wasCompletedV2;
-    }
-
-    if (!success) {
-      console.error("[answer/route] Optimistic lock update failed after 3 attempts due to conflict.");
-      return NextResponse.json({ error: "Transaction conflict, please try again" }, { status: 409 });
-    }
+    const finalQuestionStates = { ...rpcResult.question_states };
 
     // 실패(skipped/refused)인 경우 예비질문 승격 로직
     if (newState === "skipped" || newState === "refused") {
@@ -571,14 +447,13 @@ export async function POST(req: NextRequest) {
 
         if (sortedList) {
           const sortedIds = sortedList.map((h) => h.question_id);
-          const newStates = { ...states };
-          newStates[reserveQ.question_id] = "pending";
+          finalQuestionStates[reserveQ.question_id] = "pending";
 
           const { error: updateIdsErr } = await service
             .from("mission_progress")
             .update({
               question_ids: sortedIds,
-              question_states: newStates,
+              question_states: finalQuestionStates,
             })
             .eq("session_id", sessionId);
 
@@ -590,75 +465,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 멱등성 보장 골드키 지급 및 수동 롤백 (요구사항 6)
-    if (isFinalCompleted) {
-      // 남은 사전선택 질문 UNUSED 마킹 -> termination_reason: "COMPLETED" (요구사항 3, 4)
-      const { error: unusedErr } = await service
-        .from("mission_question_history")
-        .update({ termination_reason: "COMPLETED" })
-        .eq("child_id", session.child_id)
-        .eq("session_id", sessionId)
-        .eq("question_role", "RESERVE")
-        .is("asked_order", null);
-
-      if (unusedErr) {
-        console.error("[answer/route] Failed to mark unused questions as COMPLETED:", unusedErr);
-        // 롤백: progress status를 이전 상태로 롤백
-        await service
-          .from("mission_progress")
-          .update({
-            status: progress.status,
-            question_states: progress.question_states,
-            valid_answer_count: progress.valid_answer_count,
-            updated_at: progress.updated_at,
-          })
-          .eq("session_id", sessionId);
-
-        return NextResponse.json({ error: "Database error" }, { status: 500 });
-      }
-
-      try {
-        const goldKeyResult = await earnMissionCompleteKey(session.child_id, sessionId, "mission_complete");
-        if (!goldKeyResult.earned && goldKeyResult.reason !== "already_earned") {
-          throw new Error(goldKeyResult.reason || "unknown_error");
-        }
-      } catch (goldKeyErr) {
-        console.error("[answer/route] earnMissionCompleteKey error, rolling back progress and unused update:", goldKeyErr);
-        // 롤백: progress status를 이전 상태로 롤백
-        await service
-          .from("mission_progress")
-          .update({
-            status: progress.status,
-            question_states: progress.question_states,
-            valid_answer_count: progress.valid_answer_count,
-            updated_at: progress.updated_at,
-          })
-          .eq("session_id", sessionId);
-
-        // 롤백: termination_reason을 null로 원복
-        await service
-          .from("mission_question_history")
-          .update({ termination_reason: null })
-          .eq("child_id", session.child_id)
-          .eq("session_id", sessionId)
-          .eq("termination_reason", "COMPLETED");
-
-        return NextResponse.json({ error: "Failed to award gold key" }, { status: 500 });
-      }
-    }
-
     const resPayload = {
       valid: classification === "VALID",
       reason: classification !== "VALID" ? classification : null,
       refused: classification === "REFUSAL",
       previousState: prevState,
       questionState: newState,
-      validAnswerCount: validCount,
-      progressPercent: validCount * 10,
-      requiredCount: 10,
-      completed: completedV2,
+      validAnswerCount: rpcResult.valid_answer_count,
+      progressPercent: rpcResult.valid_answer_count * 10,
+      requiredCount: requiredCount,
+      completed: rpcResult.completed,
       engine_version: "v2",
-      questionStates: states,
+      questionStates: finalQuestionStates,
+      rewardStatus: rpcResult.reward_status,
     };
 
     if (childTurnId) setCachedAnswer(childTurnId, resPayload);

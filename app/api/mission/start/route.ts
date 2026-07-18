@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { selectQuestions, selectQuestionsV2, parseGrade, type RoundType } from "@/lib/mission/selectQuestions";
+import { selectQuestions, selectQuestionsV2, parseGrade, countApprovedV2Candidates, REQUIRED_COUNT_V2, TOTAL_COUNT_V2, type RoundType } from "@/lib/mission/selectQuestions";
 import { getVoiceModeForChild } from "@/lib/plan/voiceMode";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import { isQuestionEngineV2Enabled } from "@/lib/questions/feature-flags";
@@ -39,8 +39,7 @@ export async function POST(req: NextRequest) {
   const consentBlocked = await checkConsentForChild(childId);
   if (consentBlocked) return consentBlocked;
 
-  const isV2 = isQuestionEngineV2Enabled(childId);
-  const REQUIRED_COUNT = isV2 ? 10 : 5;
+  let isV2 = isQuestionEngineV2Enabled(childId);
 
   const service = createServiceClient();
 
@@ -64,6 +63,26 @@ export async function POST(req: NextRequest) {
   }
 
   if (existingSession) {
+    // 1) status만 먼저 단독 조회 — isV2(라이브 플래그)와 무관하게 항상 실행
+    const { data: statusRow, error: statusErr } = await service
+      .from("mission_progress")
+      .select("status")
+      .eq("session_id", existingSession.id)
+      .eq("round_type", roundType)
+      .maybeSingle();
+
+    if (statusErr) {
+      console.error("[start/route] status query error:", statusErr);
+      return NextResponse.json({ error: "Database error" }, { status: 500 });
+    }
+
+    if (statusRow?.status === "SAFETY_PAUSED") {
+      return NextResponse.json(
+        { error: "Mission is safety paused pending review", status: "SAFETY_PAUSED", sessionId: existingSession.id },
+        { status: 423 }
+      );
+    }
+
     interface ExistingProgressRow {
       session_id: string;
       valid_answer_count: number | null;
@@ -72,12 +91,11 @@ export async function POST(req: NextRequest) {
       round_type: string | null;
       required_valid_count?: number | null;
       engine_version?: string | null;
-      status?: string | null;
     }
 
-    // isV2 여부에 따라 select fields 분리 (V1 경로에서 신규 컬럼 select 방지)
+    // 2) 나머지 필드 조회 — required_valid_count/engine_version은 isV2가 true로 확정된 경우에만 포함
     const fields = isV2
-      ? "session_id, valid_answer_count, question_ids, question_states, round_type, required_valid_count, engine_version, status"
+      ? "session_id, valid_answer_count, question_ids, question_states, round_type, required_valid_count, engine_version"
       : "session_id, valid_answer_count, question_ids, question_states, round_type";
 
     const { data: existingProgress, error: existingProgressErr } = (await service
@@ -92,11 +110,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
 
-    const reqCount = isV2
-      ? (existingProgress?.required_valid_count ?? REQUIRED_COUNT)
-      : REQUIRED_COUNT;
+    const reqCount = isV2 ? (existingProgress?.required_valid_count ?? 10) : 5;
 
-    if (existingProgress && (existingProgress.valid_answer_count ?? 0) < reqCount) {
+    // COMPLETED 체크는 이제 statusRow 기준(플래그와 무관하게 항상 신뢰 가능)
+    if (existingProgress && (existingProgress.valid_answer_count ?? 0) < reqCount && statusRow?.status !== "COMPLETED") {
       const existingIds: string[] = existingProgress.question_ids ?? [];
       const { data: existingQuestions, error: existingQuestionsErr } = await service
         .from("mission_questions")
@@ -122,7 +139,7 @@ export async function POST(req: NextRequest) {
         requiredCount: reqCount,
         progressPercent,
         completed: (existingProgress.valid_answer_count ?? 0) >= reqCount,
-        engine_version: isV2 ? (existingProgress.engine_version ?? "v2") : "v1",
+        engine_version: isExistingV2 ? "v2" : "v1",
         questionIds: existingIds,
         questions: orderedExisting,
         questionStates: existingProgress.question_states ?? {},
@@ -149,6 +166,28 @@ export async function POST(req: NextRequest) {
   if (grade === null) {
     return NextResponse.json({ error: "Cannot parse child grade" }, { status: 400 });
   }
+
+  // 개인화(쿨다운·최근출제) 적용 후 실제 가용 문항이 PRIMARY 10개 + 전체 20개 미만이면 V1 폴백.
+  // 미승인·중복(쿨다운 미충족) 문항을 억지로 채워 넣지 않는다 — selectQuestionsV2가 내부적으로
+  // 후보 부족 시 쿨다운 미충족 문항까지 강제로 채우는 보정 로직을 갖고 있으므로, 그 보정에 기대지 않고
+  // 이 게이트에서 미리 차단한다.
+  if (isV2) {
+    const eligibleCount = await countApprovedV2Candidates(childId, grade, roundType);
+    if (eligibleCount < REQUIRED_COUNT_V2 || eligibleCount < TOTAL_COUNT_V2) {
+      console.warn("[start/route] V2->V1 폴백: 개인화 적용 후 가용 문항 부족", {
+        childId,
+        grade,
+        roundType,
+        eligibleCount,
+        requiredPrimary: REQUIRED_COUNT_V2,
+        requiredTotal: TOTAL_COUNT_V2,
+        shortfall: TOTAL_COUNT_V2 - eligibleCount,
+      });
+      isV2 = false;
+    }
+  }
+
+  const REQUIRED_COUNT = isV2 ? 10 : 5;
 
   // 출제 질문 선별
   let questionIds: string[] = [];

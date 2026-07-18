@@ -22,15 +22,17 @@ ALTER TABLE mission_question_history
   ADD COLUMN follow_up_used BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN progress_awarded BOOLEAN NOT NULL DEFAULT false;
 
+COMMENT ON COLUMN mission_question_history.answer_status IS '레거시 상태값(answered/skipped/refused). UI 하위호환을 위해 계속 기록되지만 더 이상 진행률 판정의 권위값이 아니다.';
+COMMENT ON COLUMN mission_question_history.answer_classification IS '질문 엔진 V2의 최종 판정 source of truth(VALID/PARTIAL/REFUSAL/NO_RESPONSE/SAFETY_SIGNAL). progress_awarded와 함께 서버 진행률 계산의 기준이 된다.';
+COMMENT ON COLUMN mission_question_history.progress_awarded IS '이 답변이 실제로 진행률에 반영됐는지 여부(boolean)';
+
 -- 3. mission_progress 테이블 확장
 ALTER TABLE mission_progress
   ADD COLUMN status TEXT,
-  ADD COLUMN required_valid_count INT NOT NULL DEFAULT 10,
+  ADD COLUMN required_valid_count INT NOT NULL DEFAULT 5,
   ADD COLUMN engine_version TEXT;
 
--- 4. 기존 행에 대한 백필 진행 (기존 미션들은 5개 유효답변 기준 유지)
-UPDATE mission_progress 
-SET required_valid_count = 5;
+-- 4. 기존 행에 대한 백필 진행 (기본값 변경으로 기존 행 추가 시 기본값이 자동 적용되므로, UPDATE 문은 중복이라 제거함)
 
 -- 5. RLS 정책 재정의 (교차 가족 및 형제자매 간 데이터 누출 차단)
 -- (a) mission_question_history
@@ -72,6 +74,3 @@ CREATE POLICY "parent_read_mission_progress"
     )
   );
 
--- 6. answer_status / answer_classification 컬럼 권위 주석 명시
-COMMENT ON COLUMN mission_question_history.answer_status IS '현재 미션 진행 판정의 source of truth (실제 서비스 동작 기준)';
-COMMENT ON COLUMN mission_question_history.answer_classification IS '질문 엔진의 분류/감사 목적 값 (PR2에서 진행률 로직이 이 컬럼 소비로 전환되기 전까지는 참고용)';
