@@ -86,6 +86,7 @@ export async function POST(
       family_not_found: 404,
       capacity_full: 403,
       conflict_existing_family: 409,
+      other_guardian_conflict: 409,
       not_authorized: 403,
     };
     const messageMap: Record<string, string> = {
@@ -95,6 +96,7 @@ export async function POST(
       family_not_found: "가족 그룹이 존재하지 않습니다.",
       capacity_full: "가족 보호자 정원이 이미 가득 찼습니다.",
       conflict_existing_family: "기존 가족에 자녀 또는 다른 보호자가 있어 자동으로 전환할 수 없습니다. 고객센터에 문의해주세요.",
+      other_guardian_conflict: "현재 가족에 다른 보호자가 있어 자동으로 전환할 수 없습니다.",
       not_authorized: "본인의 초대가 아닙니다.",
     };
     return NextResponse.json(

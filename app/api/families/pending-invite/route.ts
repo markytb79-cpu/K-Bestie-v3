@@ -80,7 +80,8 @@ export async function GET(req: NextRequest) {
       .from("family_members")
       .select("*", { count: "exact", head: true })
       .eq("family_id", familyId)
-      .neq("user_id", user.id);
+      .neq("user_id", user.id)
+      .in("role", ["owner_parent", "parent"]);
 
     currentFamily = {
       id: familyId,

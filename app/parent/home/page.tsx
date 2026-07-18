@@ -135,8 +135,8 @@ export default function ParentHomePage() {
   const renderInvitePopup = () => {
     if (!pendingInvite) return null;
 
-    // 충돌 상태 계산 (자녀가 있거나 다른 보호자가 있는 기존 가족 소속인 경우)
-    const isConflict = currentFamily !== null && (currentFamily.hasChildren || currentFamily.otherGuardianCount > 0);
+    // 충돌 상태 계산 (다른 보호자가 있는 기존 가족 소속인 경우)
+    const isConflict = currentFamily !== null && currentFamily.otherGuardianCount > 0;
 
     return (
       <>
@@ -159,7 +159,7 @@ export default function ParentHomePage() {
 
               {isConflict && (
                 <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-xl p-3 leading-relaxed text-left">
-                  기존 가족에 자녀 또는 다른 보호자가 있어 이 초대를 자동으로 수락할 수 없습니다. 고객센터에 문의해주세요.
+                  현재 가족에 다른 보호자가 있어 이 초대를 자동으로 수락할 수 없습니다. 고객센터에 문의해주세요.
                 </p>
               )}
 
@@ -219,7 +219,7 @@ export default function ParentHomePage() {
                 ) : (
                   <div className="flex flex-col gap-3">
                     <p className="text-xs text-red-500 mt-2 leading-relaxed font-medium">
-                      가족 초대를 수락하면 현재 내가 만든 가족은 사라지고, 초대한 사람의 가족 구성원으로 전환됩니다. 기존 가족에 등록된 정보는 복구할 수 없습니다. 계속하시겠습니까?
+                      현재 가족과 등록된 아이 및 데이터가 초대한 가족으로 이전되어 하나의 가족으로 합쳐집니다. 기존 가족은 전환 후 사라집니다.
                     </p>
                     <label className="flex items-start gap-2 text-left bg-gray-50 p-3 rounded-xl border border-gray-100 cursor-pointer select-none">
                       <input
