@@ -93,10 +93,8 @@ export async function POST(req: NextRequest) {
       engine_version?: string | null;
     }
 
-    // 2) 나머지 필드 조회 — required_valid_count/engine_version은 isV2가 true로 확정된 경우에만 포함
-    const fields = isV2
-      ? "session_id, valid_answer_count, question_ids, question_states, round_type, required_valid_count, engine_version"
-      : "session_id, valid_answer_count, question_ids, question_states, round_type";
+    // 2) 나머지 필드 조회 — required_valid_count, engine_version 상시 포함
+    const fields = "session_id, valid_answer_count, question_ids, question_states, round_type, required_valid_count, engine_version";
 
     const { data: existingProgress, error: existingProgressErr } = (await service
       .from("mission_progress")
@@ -110,7 +108,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
 
-    const reqCount = isV2 ? (existingProgress?.required_valid_count ?? 10) : 5;
+    const isExistingV2 = existingProgress?.engine_version === "v2";
+    const reqCount = isExistingV2 ? (existingProgress?.required_valid_count ?? 10) : 5;
 
     // COMPLETED 체크는 이제 statusRow 기준(플래그와 무관하게 항상 신뢰 가능)
     if (existingProgress && (existingProgress.valid_answer_count ?? 0) < reqCount && statusRow?.status !== "COMPLETED") {
@@ -129,7 +128,6 @@ export async function POST(req: NextRequest) {
         .map((qid) => (existingQuestions ?? []).find((q) => q.id === qid))
         .filter(Boolean);
 
-      const isExistingV2 = isV2 && existingProgress.engine_version === "v2";
       const progressPercent = (existingProgress.valid_answer_count ?? 0) * (isExistingV2 ? 10 : 20);
 
       return NextResponse.json({

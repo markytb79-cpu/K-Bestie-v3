@@ -131,10 +131,8 @@ export async function POST(req: NextRequest) {
     engine_version?: string | null;
   }
 
-  // 2) 나머지 필드 조회 — required_valid_count/engine_version은 isV2Flag가 true로 확정된 경우에만 포함
-  const fields = isV2Flag
-    ? "session_id, valid_answer_count, question_ids, question_states, required_valid_count, engine_version"
-    : "session_id, valid_answer_count, question_ids, question_states";
+  // 2) 나머지 필드 조회 — required_valid_count, engine_version 상시 포함
+  const fields = "session_id, valid_answer_count, question_ids, question_states, required_valid_count, engine_version";
 
   // 진행상태 로드
   const { data: progress, error: progErr } = (await service
@@ -148,7 +146,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Mission progress not found" }, { status: 404 });
   }
 
-  const isSessionV2 = isV2Flag && progress.engine_version === "v2";
+  const isSessionV2 = progress.engine_version === "v2";
   const requiredCount = isSessionV2 ? (progress.required_valid_count ?? 10) : REQUIRED_COUNT;
 
   const questionIds: string[] = progress.question_ids ?? [];
@@ -354,114 +352,111 @@ export async function POST(req: NextRequest) {
 
     // 실패(skipped/refused)인 경우 예비질문 승격 로직
     if (newState === "skipped" || newState === "refused") {
-      const { data: reserveList, error: reserveErr } = await service
-        .from("mission_question_history")
-        .select("id, question_id, selected_order")
-        .eq("child_id", session.child_id)
-        .eq("session_id", sessionId)
-        .eq("question_role", "RESERVE")
-        .is("asked_order", null)
-        .order("selected_order", { ascending: true })
-        .limit(1);
-
-      if (reserveErr) {
-        console.error("[answer/route] Failed to query reserve questions:", reserveErr);
-        return NextResponse.json({ error: "Database error" }, { status: 500 });
-      }
-
-      if (reserveList && reserveList.length > 0) {
-        const reserveQ = reserveList[0];
-        
-        // 현재 질문의 selected_order 조회
-        const { data: failedQ, error: failedQErr } = await service
+      try {
+        const { data: reserveList, error: reserveErr } = await service
           .from("mission_question_history")
-          .select("selected_order")
+          .select("id, question_id, selected_order")
           .eq("child_id", session.child_id)
           .eq("session_id", sessionId)
-          .eq("question_id", questionId)
-          .order("selected_order", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .eq("question_role", "RESERVE")
+          .is("asked_order", null)
+          .order("selected_order", { ascending: true })
+          .limit(1);
 
-        if (failedQErr) {
-          console.error("[answer/route] Failed to query failed question order:", failedQErr);
-          return NextResponse.json({ error: "Database error" }, { status: 500 });
+        if (reserveErr) {
+          throw new Error(`Failed to query reserve questions: ${reserveErr.message}`);
         }
 
-        const currentOrder = failedQ?.selected_order ?? 0;
+        if (reserveList && reserveList.length > 0) {
+          const reserveQ = reserveList[0];
+          
+          // 현재 질문의 selected_order 조회
+          const { data: failedQ, error: failedQErr } = await service
+            .from("mission_question_history")
+            .select("selected_order")
+            .eq("child_id", session.child_id)
+            .eq("session_id", sessionId)
+            .eq("question_id", questionId)
+            .order("selected_order", { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        // 이후의 selected_order들 1씩 밀기
-        const { data: shiftList, error: shiftListErr } = await service
-          .from("mission_question_history")
-          .select("id, selected_order")
-          .eq("child_id", session.child_id)
-          .eq("session_id", sessionId)
-          .gt("selected_order", currentOrder);
+          if (failedQErr) {
+            throw new Error(`Failed to query failed question order: ${failedQErr.message}`);
+          }
 
-        if (shiftListErr) {
-          console.error("[answer/route] Failed to query shift list:", shiftListErr);
-          return NextResponse.json({ error: "Database error" }, { status: 500 });
-        }
+          const currentOrder = failedQ?.selected_order ?? 0;
 
-        if (shiftList) {
-          for (const row of shiftList) {
-            const { error: shiftErr } = await service
-              .from("mission_question_history")
-              .update({ selected_order: row.selected_order + 1 })
-              .eq("id", row.id);
+          // 이후의 selected_order들 1씩 밀기
+          const { data: shiftList, error: shiftListErr } = await service
+            .from("mission_question_history")
+            .select("id, selected_order")
+            .eq("child_id", session.child_id)
+            .eq("session_id", sessionId)
+            .gt("selected_order", currentOrder);
 
-            if (shiftErr) {
-              console.error("[answer/route] Failed to update shift order:", shiftErr);
-              return NextResponse.json({ error: "Database error" }, { status: 500 });
+          if (shiftListErr) {
+            throw new Error(`Failed to query shift list: ${shiftListErr.message}`);
+          }
+
+          if (shiftList) {
+            for (const row of shiftList) {
+              const { error: shiftErr } = await service
+                .from("mission_question_history")
+                .update({ selected_order: row.selected_order + 1 })
+                .eq("id", row.id);
+
+              if (shiftErr) {
+                throw new Error(`Failed to update shift order: ${shiftErr.message}`);
+              }
+            }
+          }
+
+          // RESERVE -> PRIMARY 승격 및 순서 삽입
+          const { error: promoteErr } = await service
+            .from("mission_question_history")
+            .update({
+              question_role: "PRIMARY",
+              selected_order: currentOrder + 1,
+              asked_at: new Date().toISOString(),
+            })
+            .eq("id", reserveQ.id);
+
+          if (promoteErr) {
+            throw new Error(`Failed to promote reserve question: ${promoteErr.message}`);
+          }
+
+          // progress.question_ids 정렬 갱신
+          const { data: sortedList, error: sortedErr } = await service
+            .from("mission_question_history")
+            .select("question_id")
+            .eq("child_id", session.child_id)
+            .eq("session_id", sessionId)
+            .order("selected_order", { ascending: true });
+
+          if (sortedErr) {
+            throw new Error(`Failed to query sorted questions: ${sortedErr.message}`);
+          }
+
+          if (sortedList) {
+            const sortedIds = sortedList.map((h) => h.question_id);
+            finalQuestionStates[reserveQ.question_id] = "pending";
+
+            const { error: updateIdsErr } = await service
+              .from("mission_progress")
+              .update({
+                question_ids: sortedIds,
+                question_states: finalQuestionStates,
+              })
+              .eq("session_id", sessionId);
+
+            if (updateIdsErr) {
+              throw new Error(`Failed to update sorted ids in progress: ${updateIdsErr.message}`);
             }
           }
         }
-
-        // RESERVE -> PRIMARY 승격 및 순서 삽입
-        const { error: promoteErr } = await service
-          .from("mission_question_history")
-          .update({
-            question_role: "PRIMARY",
-            selected_order: currentOrder + 1,
-            asked_at: new Date().toISOString(),
-          })
-          .eq("id", reserveQ.id);
-
-        if (promoteErr) {
-          console.error("[answer/route] Failed to promote reserve question:", promoteErr);
-          return NextResponse.json({ error: "Database error" }, { status: 500 });
-        }
-
-        // progress.question_ids 정렬 갱신
-        const { data: sortedList, error: sortedErr } = await service
-          .from("mission_question_history")
-          .select("question_id")
-          .eq("child_id", session.child_id)
-          .eq("session_id", sessionId)
-          .order("selected_order", { ascending: true });
-
-        if (sortedErr) {
-          console.error("[answer/route] Failed to query sorted questions:", sortedErr);
-          return NextResponse.json({ error: "Database error" }, { status: 500 });
-        }
-
-        if (sortedList) {
-          const sortedIds = sortedList.map((h) => h.question_id);
-          finalQuestionStates[reserveQ.question_id] = "pending";
-
-          const { error: updateIdsErr } = await service
-            .from("mission_progress")
-            .update({
-              question_ids: sortedIds,
-              question_states: finalQuestionStates,
-            })
-            .eq("session_id", sessionId);
-
-          if (updateIdsErr) {
-            console.error("[answer/route] Failed to update sorted ids in progress:", updateIdsErr);
-            return NextResponse.json({ error: "Database error" }, { status: 500 });
-          }
-        }
+      } catch (e: any) {
+        console.error("[answer/route] reserve promotion failed (non-fatal, answer already committed):", e);
       }
     }
 
@@ -475,6 +470,8 @@ export async function POST(req: NextRequest) {
       progressPercent: rpcResult.valid_answer_count * 10,
       requiredCount: requiredCount,
       completed: rpcResult.completed,
+      newlyCompleted: rpcResult.newly_completed,
+      progressStatus: rpcResult.status,
       engine_version: "v2",
       questionStates: finalQuestionStates,
       rewardStatus: rpcResult.reward_status,
