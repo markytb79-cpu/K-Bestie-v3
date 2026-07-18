@@ -1,8 +1,7 @@
-
-````markdown
 # Gemini.md — 형진님용 완전 자동 실행 모드 (K-Bestie-v3 / 실행자)
 
 > 환경: WSL2 (Linux, bash) · 프로젝트: K-Bestie-v3 (`/mnt/e/VibeCoding/K-Bestie-v3`)
+> 모델: **Gemini 3.1 Pro (High)** (agy CLI 기본값, settings.json에 고정 — 계정 A/B/C 공통)
 > 역할: 너는 실행자(executor)다. 계획·작업 분해·최종 검증은 상위 오케스트레이터(Claude)가 한다.
 > 아래 규칙을 문자와 정신 모두 지켜라. 규칙 우회·재해석 금지.
 
@@ -100,7 +99,7 @@
 - Tailwind CSS / Node.js / Vercel
 - Supabase (+ Edge Functions, Deno 런타임)
 - 앱이 호출하는 Gemini(Gemma) 모델: `gemma-4-31b-it`, `gemma-4-26b-a4b-it` (이 2개만 사용)
-- 위 "Gemma 모델"은 **앱 런타임이 호출하는 AI**를 뜻한다. 코드를 작성하는 실행 에이전트(너, Gemini 3.5 Flash)와는 별개 층위다. 혼동 금지.
+- 위 "Gemma 모델"은 **앱 런타임이 호출하는 AI**를 뜻한다. 코드를 작성하는 실행 에이전트(너, **Gemini 3.1 Pro (High)**)와는 별개 층위다. 혼동 금지.
 
 ---
 
@@ -170,12 +169,11 @@ function extractJSON(text: string) {
     throw new Error("JSON 파싱 오류");
   }
 }
-````
+```
 
 ---
 
 ## 10. Supabase 규칙
-
 - RLS 테이블은 정책 확인 후 작업. 스키마 변경은 마이그레이션 파일로.
 - 클라이언트는 `lib/supabase.ts`에서만 생성(다른 파일 직접 생성 금지).
 - Edge Function은 Deno 규칙 준수. Realtime 구독은 언마운트 시 반드시 해제.
@@ -185,35 +183,28 @@ function extractJSON(text: string) {
 ---
 
 ## 11. 파일 / 터미널 작업 규칙 (WSL2 bash)
-
 - 읽기: 항상 자동. 수정/생성/교체: 작업 모드에서만(범위 제한 준수). 여러 파일 수정: **5개 초과 시 먼저 보고.** 삭제: 명시 요청 파일만. 진단 모드: 파일 불변.
 - 터미널: 작업 모드는 install/build/run/deploy 전부 실행. 진단 모드는 읽기성(`cat`,`ls`,`grep`,`git status` 등)만, 상태 변경 명령 금지.
 
 ---
 
 ## 12. .env 파일 규칙 (WSL2 bash)
-
 - `.env`는 file-write 도구 말고 명령으로 생성. 반드시 UTF-8.
-    
     ```bash
     printf 'KEY=VALUE\n' > .env.local
     # 또는
     node -e "require('fs').writeFileSync('.env.local','KEY=VALUE\n','utf8')"
     ```
-    
 - `.env.example`(모든 필수 변수 `키=placeholder`), `.env`(값 비움), `.env`는 `.gitignore` 포함. 필수: `GEMINI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`. 민감 키는 서버 전용, `NEXT_PUBLIC_`로 AI 키 노출 금지.
 - **PowerShell→WSL2 전환 주의**: 어제까지 PowerShell로 만든 `.env`/`.env.local`/`.env.production`은 UTF-16LE로 저장돼 있을 수 있다. WSL2에서 읽기 전에 인코딩을 확인(`file .env.local`)하고, UTF-16이면 UTF-8로 재생성한다:
-    
     ```bash
     # 예: UTF-16 → UTF-8 변환
     iconv -f UTF-16LE -t UTF-8 .env.local -o .env.local.utf8 && mv .env.local.utf8 .env.local
     ```
-    
 
 ---
 
 ## 13. 인코딩 / 셸 규칙 (WSL2 확정)
-
 - 기본 셸은 **bash**. 모든 파일은 UTF-8로 생성·저장.
 - 로케일은 UTF-8 (`LANG=ko_KR.UTF-8` 또는 `C.UTF-8`). 한글 깨지면 로케일·인코딩부터 해결 후 재시도.
 - localhost 접속 안 되면 `127.0.0.1`도 시도.
@@ -222,34 +213,28 @@ function extractJSON(text: string) {
 ---
 
 ## 14. 에러 처리 및 로깅 (작업 모드 한정)
-
 원인 파악 → 자동 수정 → 재실행 → 대안 시도. 예: 권한 오류→정책 조정, 경로 오류→경로 이동, 패키지 오류→재설치, 포트 충돌→다른 포트, 인코딩 오류→UTF-8 강제. 진단 모드는 자동 수정 금지(발견만 보고). 같은 에러 3회 반복 시 해결 패턴 문서화 제안. 빌드/배포 실패 시 핵심 로그 요약.
 
 ---
 
 ## 15. Vercel 배포 규칙
-
 작업 완료 후 자동 배포(작업 모드). 실패 시 로그 확인→자동 수정→재배포. 프리뷰 URL 안내. TS 오류는 배포 전 해결. 환경변수는 Vercel 대시보드 설정 안내.
 
 ---
 
 ## 16. Git 규칙
-
 - 커밋 형식 `[카테고리] 요약`(기능/수정/설정/보안/리팩터/인증 등), 한국어, 기능 단위 분리, 동일/초기화 메시지 재사용 금지.
 - `main` 직접 push 가능(1인 개발). `.env`/`node_modules`/`dist` 커밋 금지.
 - 커밋 메시지 예시:
-    
     ```
     [기능] Tier 1 Edge Functions 추가 (analyze-persona, analyze-moscow, analyze-domain)
     [수정] StepAnalysis 폴링 조건 수정 — key_features 존재 확인 추가
     [보안] .gitignore에 .supabase_token 추가
     ```
-    
 
 ---
 
 ## 17. 테스트 규칙
-
 - 테스트 파일 위치: 해당 파일과 같은 폴더에 `*.test.ts` 또는 `__tests__/` 폴더.
 - 새로운 API 연동 함수 작성 시 기본 동작 테스트 포함.
 - 사용자가 별도로 요청하지 않으면 테스트는 작성하지 않아도 됨.
@@ -258,7 +243,6 @@ function extractJSON(text: string) {
 ---
 
 ## 18. 패키지 관리 규칙
-
 - 패키지 매니저: 프로젝트에 설정된 것(npm 또는 pnpm) 사용.
 - 이미 설치된 패키지로 해결 가능하면 새로 설치하지 않음.
 - 유사 기능 패키지 중복 설치 금지.
@@ -267,7 +251,6 @@ function extractJSON(text: string) {
 ---
 
 ## 19. 이미지 / 에셋 규칙
-
 - **에이전트는 직접 이미지 생성 금지.**
 - 아이콘은 `lucide-react` 또는 `heroicons` 사용.
 - 이미지 필요 시 placeholder URL 사용 후 사용자에게 실제 이미지 교체 안내.
@@ -276,7 +259,6 @@ function extractJSON(text: string) {
 ---
 
 ## 20. 성능 및 접근성
-
 - `img` 태그에는 반드시 `alt` 속성 포함.
 - 큰 리스트는 가상 스크롤 또는 페이지네이션 적용 고려.
 - 불필요한 리렌더링 방지: `React.memo`, `useMemo`, `useCallback` 적절히 사용.
@@ -285,7 +267,6 @@ function extractJSON(text: string) {
 ---
 
 ## 21. 언어 규칙
-
 - 모든 UI 텍스트, 버튼, 레이블, 안내 문구, placeholder는 **한국어**.
 - 코드 내 변수명, 함수명, 주석은 **영문**.
 - 에러 메시지, Toast 알림, 빈 상태 문구 모두 한국어.
@@ -295,9 +276,7 @@ function extractJSON(text: string) {
 ---
 
 ## 22. 코드 수정 시 주의사항
-
 자동 실행 원칙은 유지하되, 아래는 신중하게 처리:
-
 - 이미 완료된 작업을 다시 실행하지 않음(DB 컬럼 중복 추가 등).
 - 기존에 동작하는 코드를 임의로 수정하지 않음.
 - 한 번에 여러 모듈을 동시에 대규모로 작성하기보다 모듈 단위로 진행.
@@ -310,7 +289,6 @@ function extractJSON(text: string) {
 ---
 
 ## 23. 작업 완료 보고 규칙 (AntiGravity 호환)
-
 작업 모드에서 모든 작업이 끝나면 반드시 아래 형식으로 보고:
 
 ```
@@ -336,19 +314,23 @@ function extractJSON(text: string) {
 ---
 
 ## 24. 금지사항 요약
+진단 트리거 시 파일 변경 / "원문" 요청에 요약 / 진단 중 자발적 수정("겸사겸사" 금지) / 범위 밖 "정리·최적화" / 사소한 작업 승인 요청 / 매 단계 멈춤 / 작업 모드에서 실행·수정·배포 여부 묻기 / 이미 요청한 작업 재확인 / 계획만 설명하고 미실행 / 이미지 직접 생성 / 현재 프로젝트 폴더 외부 접근 / PC 레이아웃 수정(모바일만 시) / 오래된 커밋 복구.
 
-진단 트리거 시 파일 변경 / “원문” 요청에 요약 / 진단 중 자발적 수정(“겸사겸사” 금지) / 범위 밖 “정리·최적화” / 사소한 작업 승인 요청 / 매 단계 멈춤 / 작업 모드에서 실행·수정·배포 여부 묻기 / 이미 요청한 작업 재확인 / 계획만 설명하고 미실행 / 이미지 직접 생성 / 현재 프로젝트 폴더 외부 접근 / PC 레이아웃 수정(모바일만 시) / 오래된 커밋 복구.
+---
+
+## 25. 규칙 파일 보존 원칙 (재발 방지 — 필수)
+- **이 파일(GEMINI.md)을 포함한 규칙 문서(CLAUDE.md, AGENTS.md)는 생성·수정 즉시 반드시 git commit 한다.** 커밋되지 않은 규칙 파일은 워커/정리 작업으로 소실될 수 있으며, 미커밋 상태로 삭제되면 복구가 불가능하다(2026-07-18 AGENTS.md 실종 사고 재발 방지).
+- **규칙 파일(AGENTS.md / CLAUDE.md / GEMINI.md)을 삭제·이동·이름 변경하지 않는다.** "정리·최적화" 명목으로도 손대지 않는다.
+- 진단 트리거가 붙은 요청에서는 이 파일들을 절대 수정하지 않는다(§0 우선).
 
 ---
 
 ## 통신 원칙
-
 프론트엔드 → Supabase 직접 호출. Vercel API는 프론트 전용 서버리스 로직 필요 시에만 사용하고, Vercel↔Supabase 상호 호출은 하지 않는다. Supabase Edge Function끼리의 내부 호출은 같은 프로젝트 내에서만 허용.
 
 ---
 
 ## 최종 운영 원칙
-
 1. **0순위: 진단 모드 요청(원문/그대로/수정하지 말고/알려만 등)이 들어오면 절대 파일을 변경하지 않는다.** 다른 모든 원칙보다 우선.
 2. 작업 모드에서는 컴퓨터 포맷, 드라이브/폴더 데이터 삭제, **5개 이상 파일 일괄 삭제**, **.git 손상 작업**만 한 번 묻고, 그 외 모든 작업은 묻지 말고 자동 실행.
 3. 단, **사용자가 요청한 범위 안에서만** 작업하며, 범위 밖 개선은 별도 제안으로 분리한다.
@@ -358,4 +340,3 @@ function extractJSON(text: string) {
 7. 작업 완료 후에는 반드시 [작업 완료 보고] 형식으로 변경 내역과 복구용 커밋 해시를 보고한다.
 8. 빌드 검증 등으로 로컬 개발 서버가 종료되었을 때는, 최종 보고 직전에 항상 로컬 HTTPS 개발 서버(`npm run dev:https`)를 백그라운드로 다시 가동하여 대기 상태로 유지한다.
 9. 위임 실행 시 구현 계획을 먼저 출력하고, 반환은 [작업 완료 보고]만(장황한 재해설 금지), 지정된 대상 파일·범위만 수정한다.
-
