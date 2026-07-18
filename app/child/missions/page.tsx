@@ -253,14 +253,9 @@ function MissionInner() {
           // "종료 발화의 turnComplete + 오디오 재생 완료 + 700ms" 이후에만 세션을 닫는다.
           // 일반 후속 질문 큐(pickNextIndex/askQuestion)는 절대 실행하지 않는다.
           if (voiceModeRef.current === "live") {
-            // 순서 중요: 먼저 lockNow()로 5번째 답변 턴의 잔여 오디오/추가 질문을 즉시 차단하고,
-            // 종료 플로우를 start()로 무장시킨 뒤, speakClosingLine()으로 전용 종료 발화를 보낸다.
-            // (예전엔 종료 지시를 5번째 질문 텍스트에 심어, 종료 발화가 답변 턴의 연속으로 이미
-            //  다 재생된 뒤에야 락이 걸려 "음성 없이 텍스트만" 버그가 났었다.)
             turnPhaseRef.current = "speaking_k";
             liveRef.current?.lockNow();
-            missionControllerRef.current?.start();
-            liveRef.current?.speakClosingLine(MISSION_CLOSING_LINE);
+            missionControllerRef.current?.start({ immediateTtsFallback: true });
           } else {
             // STT/TTS(Tier1/2) 경로는 연속 스트리밍 세션이 아니라 매 발화가 개별 TTS
             // 호출로 끝나므로 기존의 단순 즉시 종료 방식을 그대로 유지한다.

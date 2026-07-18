@@ -70,13 +70,16 @@ export class MissionCompletionController {
     return this.state;
   }
 
-  /** 5번째 유효 답변이 확정된 시점 — 미션 화면에서 그 즉시 1회 호출할 것. 중복 호출은 무시된다
-   *  (새로고침 후 동일 이벤트가 다시 들어오는 경우 등 방어). */
-  start(): void {
+  start(options?: { immediateTtsFallback?: boolean }): void {
     if (this.state !== "active") return;
     this.state = "completing";
     this.cb.onStateChange(this.state);
     this.cb.onLog("mission_completion_started");
+
+    if (options?.immediateTtsFallback) {
+      void this.runTtsFallback("closing_audio_timeout");
+      return;
+    }
 
     this.fallbackTimer = this.setTimerFn(() => this.forceFinish("fallback_timeout"), FALLBACK_TIMEOUT_MS);
     this.closingAudioTimer = this.setTimerFn(() => {
