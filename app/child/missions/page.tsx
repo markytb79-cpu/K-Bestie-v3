@@ -253,14 +253,9 @@ function MissionInner() {
           // "종료 발화의 turnComplete + 오디오 재생 완료 + 700ms" 이후에만 세션을 닫는다.
           // 일반 후속 질문 큐(pickNextIndex/askQuestion)는 절대 실행하지 않는다.
           if (voiceModeRef.current === "live") {
-            // 순서 중요: 먼저 lockNow()로 5번째 답변 턴의 잔여 오디오/추가 질문을 즉시 차단하고,
-            // 종료 플로우를 start()로 무장시킨 뒤, speakClosingLine()으로 전용 종료 발화를 보낸다.
-            // (예전엔 종료 지시를 5번째 질문 텍스트에 심어, 종료 발화가 답변 턴의 연속으로 이미
-            //  다 재생된 뒤에야 락이 걸려 "음성 없이 텍스트만" 버그가 났었다.)
             turnPhaseRef.current = "speaking_k";
             liveRef.current?.lockNow();
-            missionControllerRef.current?.start();
-            liveRef.current?.speakClosingLine(MISSION_CLOSING_LINE);
+            missionControllerRef.current?.start({ immediateTtsFallback: true });
           } else {
             // STT/TTS(Tier1/2) 경로는 연속 스트리밍 세션이 아니라 매 발화가 개별 TTS
             // 호출로 끝나므로 기존의 단순 즉시 종료 방식을 그대로 유지한다.
@@ -452,6 +447,34 @@ function MissionInner() {
 
   getTranscriptRef.current = voice.getTranscript;
 
+  const [autoStartFailed, setAutoStartFailed] = useState(false);
+  const hasAutoStartedRef = useRef(false);
+
+  // 자동 모드일 때 첫 진입 시 자동으로 Live 음성 세션 시작
+  useEffect(() => {
+    if (
+      isLiveMode &&
+      phase === "ready" &&
+      mode === "voice" &&
+      isAuto &&
+      voice.status !== "live" &&
+      voice.status !== "connecting" &&
+      !hasAutoStartedRef.current
+    ) {
+      hasAutoStartedRef.current = true;
+      void voice.startSession();
+    }
+  }, [isLiveMode, phase, mode, isAuto, voice.status, voice]);
+
+  // 세션 상태 감시 및 자동 시작 실패 감지
+  useEffect(() => {
+    if (voice.status === "live" || voice.status === "connecting") {
+      setAutoStartFailed(false);
+    } else if (hasAutoStartedRef.current && voice.status === "error") {
+      setAutoStartFailed(true);
+    }
+  }, [voice.status]);
+
   const askQuestion = useCallback((idx: number, customText?: string) => {
     const q = questionsRef.current[idx];
     if (!q) return;
@@ -470,6 +493,7 @@ function MissionInner() {
   const switchToText = useCallback(() => {
     if (isRecordingRef.current) {
       live.sendActivityEnd();
+      live.setAudioMuted(false);
       setIsRecording(false);
       isRecordingRef.current = false;
     }
@@ -610,13 +634,14 @@ function MissionInner() {
     if (voice.status === "live") {
       live.setInteractionMode(isAuto ? "auto" : "manual");
     }
-  }, [voice.status, isAuto, live]);
+  }, [voice.status, isAuto, live.setInteractionMode]);
 
   const handleModeChange = useCallback((newMode: "auto" | "manual") => {
     if (newMode === "auto") {
       // 수동 발화(녹음) 중이었다면 안전하게 activityEnd 선전송
       if (isRecordingRef.current) {
         live.sendActivityEnd();
+        live.setAudioMuted(false);
         setIsRecording(false);
         isRecordingRef.current = false;
       }
@@ -634,8 +659,11 @@ function MissionInner() {
     if (!isRecordingRef.current) {
       // 첫 클릭: K가 말하는 중이면 오디오 재생 즉시 중단 후 activityStart
       live.setAudioMuted(true);
-      live.setAudioMuted(false);
-      live.sendActivityStart();
+      const success = live.sendActivityStart();
+      if (!success) {
+        live.setAudioMuted(false);
+        return;
+      }
       setIsRecording(true);
       isRecordingRef.current = true;
       recordingStartedAtRef.current = Date.now();
@@ -646,6 +674,7 @@ function MissionInner() {
         return;
       }
       live.sendActivityEnd();
+      live.setAudioMuted(false);
       setIsRecording(false);
       isRecordingRef.current = false;
       
@@ -661,12 +690,7 @@ function MissionInner() {
     }
   }, [live]);
 
-  useEffect(() => {
-    if (phase === "ready" && voiceMode && voice.status === "idle") {
-      voice.startSession();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, voiceMode, voice.status]);
+
 
   // 과거 대화(chat_messages) 스크롤백 채워넣기 — 세션이 live가 된 직후 1회만 실행.
   // startSession()이 자체적으로 transcript를 비우므로 그 이전에 넣으면 소용없다.
@@ -776,7 +800,7 @@ function MissionInner() {
 
   // 음성 세션 자체가 끊긴 경우(예: Vertex Live 연결 실패) — 기술 오류 문구 대신
   // voice.error에 담긴 아이용 안내 문구만 보여준다(Plan7 §2, fallback 없음).
-  if (voice.status === "error") {
+  if (voice.status === "error" && !autoStartFailed) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "#fafaf8" }}>
         <p className="text-5xl">🌙</p>
@@ -805,8 +829,8 @@ function MissionInner() {
     <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
       {/* 상단 고정 영역: 헤더 + 진행률 게이지 + 마스코트 (스크롤되지 않음) */}
       <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
-        <div className="flex items-center justify-center px-4 pt-4 pb-2">
-          <Link href="/child/home" className="cursor-pointer">
+        <div className="flex items-center justify-center px-4 pt-3 pb-1">
+          <Link href="/child/home" className="cursor-pointer shrink-0">
             <Image
               src="/Images/logo/Logo.png"
               alt="내친구 케이"
@@ -818,37 +842,37 @@ function MissionInner() {
           </Link>
         </div>
 
-        <div className="text-center pt-2 pb-4">
-          <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
-            {isDone ? "오늘의 미션을 완료했어요!" : isConnecting ? "케이를 부르는 중이에요…" : "케이가 듣고 있어요…"}
-          </h1>
-          <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
-            {/* missionState==="completed"(종료 발화+700ms 대기까지 실제로 끝난 시점)일 때만
-                정확한 완료 안내 문구를 표시 — completing 중엔 기존 문구 그대로 유지. */}
-            {missionState === "completed"
-              ? MISSION_CLOSING_LINE
-              : isDone
-              ? "황금열쇠를 받았어요. 내일 또 만나요! 🔑"
-              : "질문에 편하게 대답해 보세요"}
-          </p>
-
-          <div className="px-6 mt-3">
-            <p className="text-xs font-bold" style={{ color: "#1a6b5a" }}>
-              미션 진행 {missionPercent}% ({gauge}/{requiredCount})
+        {isDone && (
+          <div className="text-center pt-1.5 pb-2">
+            <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
+              오늘의 미션을 완료했어요!
+            </h1>
+            <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
+              {/* missionState==="completed"(종료 발화+700ms 대기까지 실제로 끝난 시점)일 때만
+                  정확한 완료 안내 문구를 표시 — completing 중엔 기존 문구 그대로 유지. */}
+              {missionState === "completed"
+                ? MISSION_CLOSING_LINE
+                : "황금열쇠를 받았어요. 내일 또 만나요! 🔑"}
             </p>
-            <div className="mt-1.5 h-2.5 rounded-full bg-gray-200 overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-700 ease-out"
-                style={{
-                  width: `${missionPercent}%`,
-                  background: "linear-gradient(90deg, #1a6b5a 0%, #2a8a72 100%)",
-                }}
-              />
-            </div>
+          </div>
+        )}
+
+        <div className="px-6 mt-1.5 mb-2">
+          <p className="text-xs font-bold text-center" style={{ color: "#1a6b5a" }}>
+            미션 진행 {missionPercent}% ({gauge}/{requiredCount})
+          </p>
+          <div className="mt-1 h-2 rounded-full bg-gray-200 overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-700 ease-out"
+              style={{
+                width: `${missionPercent}%`,
+                background: "linear-gradient(90deg, #1a6b5a 0%, #2a8a72 100%)",
+              }}
+            />
           </div>
         </div>
 
-        <div className="flex justify-center mb-4">
+        <div className="relative flex justify-center items-center mb-2">
           <Image
             src="/Images/mascot/mascot-standing.png"
             alt="케이 마스코트"
@@ -857,34 +881,35 @@ function MissionInner() {
             className="object-contain"
             priority
           />
-        </div>
-
-        {isLive && !isDone && (
-          <div className="flex justify-center mb-4 shrink-0">
-            <div className="inline-flex items-center gap-1.5 p-1 bg-gray-100 rounded-full border border-gray-200 shadow-inner">
+          {isLiveMode && !isDone && (
+            <div className="absolute left-[calc(50%+52px)] top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-full border border-gray-200 shadow-inner shrink-0 z-10">
               <button
                 onClick={() => handleModeChange("auto")}
-                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-300 ease-out cursor-pointer ${
-                  isAuto 
-                    ? "bg-[#1a6b5a] text-white shadow-sm" 
+                aria-pressed={isAuto}
+                aria-label="자동으로 말하기"
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all duration-300 ease-out cursor-pointer ${
+                  isAuto
+                    ? "bg-[#1a6b5a] text-white shadow-sm"
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
-                자동 (케이가 알아서 들어요)
+                자동
               </button>
               <button
                 onClick={() => handleModeChange("manual")}
-                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-300 ease-out cursor-pointer ${
-                  !isAuto 
-                    ? "bg-[#1a6b5a] text-white shadow-sm" 
+                aria-pressed={!isAuto}
+                aria-label="버튼 눌러 말하기"
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all duration-300 ease-out cursor-pointer ${
+                  !isAuto
+                    ? "bg-[#1a6b5a] text-white shadow-sm"
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
-                수동 (내가 말할 때 눌러요)
+                수동
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* 대화 말풍선: 이 영역만 스크롤 */}
@@ -894,8 +919,10 @@ function MissionInner() {
       >
         {voice.transcript.length === 0 ? (
           <div className="flex items-center justify-center h-full text-center p-4">
-            <p className="text-xs" style={{ color: "#9ca3af" }}>
-              곧 케이가 첫 질문을 해줄 거예요 🌿
+            <p className="text-xs leading-relaxed" style={{ color: "#9ca3af" }}>
+              {isAuto
+                ? "케이가 자동으로 들을 준비를 하고 있어요 🌿"
+                : "세션 시작 뒤 말하기 버튼을 사용해 말해요 🌿"}
             </p>
           </div>
         ) : (
@@ -987,14 +1014,19 @@ function MissionInner() {
             )
           )}
 
-          {!isLive && !isConnecting && !isDone && (
+          {!isLive && !isConnecting && !isDone && (!isAuto || autoStartFailed) && (
             <button
-              onClick={() => voice.startSession()}
-              className="w-16 h-16 rounded-full flex items-center justify-center text-2xl text-white shadow-md transition-transform active:scale-95 cursor-pointer"
+              onClick={() => {
+                setAutoStartFailed(false);
+                voice.startSession();
+              }}
+              className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
               style={{ background: "#e8845a" }}
-              aria-label="마이크 켜기"
+              aria-label="미션 시작"
             >
-              🎤
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                <path d="M8 5v14l11-7z" />
+              </svg>
             </button>
           )}
 

@@ -1,7 +1,7 @@
-import { createServiceClient } from "@/lib/supabase/server";
+import { SupabaseClient } from "@supabase/supabase-js";
 
 export async function requireChildAccess(
-  supabase: any,
+  supabase: SupabaseClient,
   userId: string,
   childId: string
 ): Promise<{ allowed: boolean; role: "parent" | "child" | null }> {
@@ -10,10 +10,8 @@ export async function requireChildAccess(
   }
 
   try {
-    const serviceClient = createServiceClient();
-
     // 1. 사용자의 모든 가족 멤버십 조회
-    const { data: members, error: memberErr } = await serviceClient
+    const { data: members, error: memberErr } = await supabase
       .from("family_members")
       .select("id, family_id, role")
       .eq("user_id", userId);
@@ -23,7 +21,7 @@ export async function requireChildAccess(
     }
 
     // 2. 대상 자녀 프로필 조회
-    const { data: child, error: childErr } = await serviceClient
+    const { data: child, error: childErr } = await supabase
       .from("child_profiles")
       .select("id, family_id, member_id")
       .eq("id", childId)

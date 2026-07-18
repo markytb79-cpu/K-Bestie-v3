@@ -346,3 +346,75 @@ test("(f) dispose()는 2.5초 타이머를 발화 없이 정리한다", async ()
   assert.equal(calls.showCompletionText, 0);
   assert.equal(calls.closeSession, 0);
 });
+
+test("즉시 TTS 폴백 경로: immediateTtsFallback 옵션을 사용하는 경우 (deferred Promise 검증)", async () => {
+  const clock = new FakeClock();
+  const events: { event: string; fields?: Record<string, unknown> }[] = [];
+  const calls = {
+    stateChanges: [] as string[],
+    showCompletionText: 0,
+    closeSession: 0,
+    grantReward: 0,
+    closingAudioTimeout: 0,
+  };
+
+  let resolveTtsPromise!: () => void;
+  const ttsPromise = new Promise<void>((resolve) => {
+    resolveTtsPromise = resolve;
+  });
+
+  const controller = new MissionCompletionController({
+    onStateChange: (s) => calls.stateChanges.push(s),
+    onShowCompletionText: () => { calls.showCompletionText++; },
+    onCloseSession: () => { calls.closeSession++; },
+    onGrantReward: () => { calls.grantReward++; },
+    onClosingAudioTimeout: () => {
+      calls.closingAudioTimeout++;
+      return ttsPromise;
+    },
+    onLog: (event, fields) => events.push({ event, fields }),
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  });
+
+  // start 호출 with immediateTtsFallback
+  controller.start({ immediateTtsFallback: true });
+
+  // start 옵션 호출 후 state completing, onClosingAudioTimeout 1회
+  assert.equal(controller.getState(), "completing");
+  assert.equal(calls.closingAudioTimeout, 1);
+
+  // Promise resolve 전 close 0/completed 전이 0
+  await tick();
+  assert.equal(calls.closeSession, 0);
+  assert.equal(calls.grantReward, 0);
+  assert.equal(calls.stateChanges.filter(s => s === "completed").length, 0);
+
+  // start 재호출 및 중복 신호에서도 모두 1회 검증
+  controller.start({ immediateTtsFallback: true });
+  controller.notifyClosingAudioStarted();
+  controller.notifyTurnComplete();
+  controller.notifyAudioDrained();
+
+  await tick();
+  assert.equal(calls.closingAudioTimeout, 1);
+  assert.equal(calls.closeSession, 0);
+  assert.equal(calls.grantReward, 0);
+
+  // resolve 후 close 1/completed 1/reward 1
+  resolveTtsPromise();
+  await tick();
+
+  assert.equal(calls.closeSession, 1);
+  assert.equal(controller.getState(), "completed");
+  assert.equal(calls.grantReward, 1);
+  assert.equal(calls.stateChanges.filter(s => s === "completed").length, 1);
+
+  // 다시 start 호출해도 변화 없어야 함
+  controller.start({ immediateTtsFallback: true });
+  await tick();
+  assert.equal(calls.closingAudioTimeout, 1);
+  assert.equal(calls.closeSession, 1);
+  assert.equal(controller.getState(), "completed");
+  assert.equal(calls.grantReward, 1);
+});
