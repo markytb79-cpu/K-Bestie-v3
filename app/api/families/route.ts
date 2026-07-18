@@ -20,6 +20,7 @@ export async function GET() {
     .from("family_members")
     .select("family_id, role, joined_at, families(id, name, created_at)")
     .eq("user_id", user.id)
+    .is("deleted_at", null)
     .order("joined_at", { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -32,6 +33,9 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const activeCheck = await requireActiveAccount(user.id);
+  if (activeCheck) return activeCheck;
+
   let name: string;
   try {
     ({ name } = await req.json());
@@ -42,52 +46,31 @@ export async function POST(req: NextRequest) {
 
   const svc = createServiceClient();
 
-  // 1. 현재 사용자의 기존 family_members 존재 여부 먼저 조회
-  const { data: existingMember, error: checkErr } = await svc
-    .from("family_members")
-    .select("family_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .maybeSingle();
+  const { data, error } = await svc.rpc("create_family_with_owner", { 
+    p_user_id: user.id, 
+    p_name: name.trim() 
+  });
 
-  if (checkErr) {
-    return NextResponse.json({ error: checkErr.message }, { status: 500 });
-  }
-  if (existingMember) {
-    return NextResponse.json({ error: "이미 가족에 소속되어 있습니다." }, { status: 409 });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // 2. 가족 생성
-  const { data: family, error: famErr } = await svc
-    .from("families")
-    .insert({ name: name.trim(), created_by: user.id })
-    .select("id, name, created_at")
-    .single();
-
-  if (famErr) {
-    if (famErr.code === "23505") {
-      return NextResponse.json({ error: "이미 가족에 소속되어 있습니다." }, { status: 409 });
-    }
-    return NextResponse.json({ error: famErr.message }, { status: 500 });
+  if (!data || !data[0]) {
+    return NextResponse.json({ error: "가족 생성 응답 오류" }, { status: 500 });
   }
 
-  // 3. 멤버십 추가
-  const { error: memErr } = await svc
-    .from("family_members")
-    .insert({ family_id: family.id, user_id: user.id, role: "owner_parent" });
-
-  if (memErr) {
-    try {
-      await svc.from("families").delete().eq("id", family.id);
-    } catch (cleanupErr) {
-      console.error("Failed to cleanup orphaned family:", cleanupErr);
-    }
-
-    if (memErr.code === "23505") {
-      return NextResponse.json({ error: "이미 가족에 소속되어 있습니다." }, { status: 409 });
-    }
-    return NextResponse.json({ error: memErr.message }, { status: 500 });
+  if (data[0].error_code || !data[0].family_id) {
+    return NextResponse.json(
+      { error: data[0].error_code === "already_member" ? "이미 가족에 소속되어 있습니다." : "가족 생성 실패" },
+      { status: data[0].error_code === "already_member" ? 409 : 500 }
+    );
   }
+
+  const family = {
+    id: data[0].family_id,
+    name: data[0].family_name,
+    created_at: data[0].created_at
+  };
 
   return NextResponse.json({ family }, { status: 201 });
 }

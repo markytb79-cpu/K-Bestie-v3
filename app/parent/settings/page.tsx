@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/hooks/useStore";
 import { createClient } from "@/lib/supabase/client";
@@ -156,6 +156,7 @@ export default function ParentSettingsPage() {
   const [withdrawalLoading, setWithdrawalLoading] = useState(false);
   const [withdrawalError, setWithdrawalError] = useState<string | null>(null);
   const [userProvider, setUserProvider] = useState<string>("email");
+  const [withdrawalLastGuardianAgreed, setWithdrawalLastGuardianAgreed] = useState(false);
 
   // 로그인 이메일 및 구성원 정보 로드
   useEffect(() => {
@@ -496,7 +497,16 @@ export default function ParentSettingsPage() {
     setWithdrawalLoading(true);
     setWithdrawalError(null);
     try {
-      const body: any = { reason: withdrawalReason };
+      interface WithdrawRequestBody {
+        reason: string;
+        confirmedLastGuardian: boolean;
+        successorUserId?: string;
+        password?: string;
+      }
+      const body: WithdrawRequestBody = { 
+        reason: withdrawalReason,
+        confirmedLastGuardian: withdrawalLastGuardianAgreed
+      };
       if (withdrawalSuccessor) body.successorUserId = withdrawalSuccessor;
       if (userProvider === "email") body.password = withdrawalPassword;
 
@@ -510,7 +520,12 @@ export default function ParentSettingsPage() {
       
       if (!res.ok) {
         if (res.status === 409) {
-          setWithdrawalError("관리자 권한을 승계할 보호자를 선택해야 합니다.");
+          if (data.error === "last_guardian_confirmation_required") {
+            setWithdrawalError("가족의 모든 데이터가 함께 삭제되는 것에 동의해야 탈퇴할 수 있습니다.");
+          } else {
+            setWithdrawalError("관리자 권한을 승계할 보호자를 선택해야 합니다.");
+          }
+          loadFamilyMembers();
           setWithdrawalStep(1);
         } else if (res.status === 401) {
           if (userProvider !== "email" && data.error === "재로그인 후 다시 시도해주세요") {
@@ -553,6 +568,10 @@ export default function ParentSettingsPage() {
       );
     }
   };
+
+  const otherActiveGuardians = useMemo(() => {
+    return familyMembers.filter(m => (m.role === "parent" || m.role === "owner_parent") && !m.isMe);
+  }, [familyMembers]);
 
   if (!mounted) {
     return (
@@ -971,7 +990,7 @@ export default function ParentSettingsPage() {
                       rows={3}
                     />
 
-                    {isOwner && familyMembers.filter(m => (m.role === "parent" || m.role === "owner_parent") && !m.isMe).length > 0 && (
+                    {isOwner && otherActiveGuardians.length > 0 && (
                       <div className="flex flex-col gap-2">
                         <p className="text-[10px] font-bold text-gray-500">가족 관리자 권한 승계</p>
                         <p className="text-[10px] text-gray-400">다른 보호자에게 관리자 권한을 넘겨야 탈퇴할 수 있습니다.</p>
@@ -981,13 +1000,27 @@ export default function ParentSettingsPage() {
                           className="p-2 text-xs border border-gray-200 rounded-xl bg-white outline-none"
                         >
                           <option value="">승계할 보호자 선택</option>
-                          {familyMembers
-                            .filter(m => (m.role === "parent" || m.role === "owner_parent") && !m.isMe)
-                            .map(m => (
-                              <option key={m.userId} value={m.userId}>{m.displayName} ({m.parentEmail || "이메일 알 수 없음"})</option>
-                            ))
-                          }
+                          {otherActiveGuardians.map(m => (
+                            <option key={m.userId} value={m.userId}>{m.displayName} ({m.parentEmail || "이메일 알 수 없음"})</option>
+                          ))}
                         </select>
+                      </div>
+                    )}
+
+                    {isOwner && otherActiveGuardians.length === 0 && (
+                      <div className="flex flex-col gap-2 mt-1">
+                        <p className="text-xs font-bold text-red-600 leading-relaxed">
+                          현재 가족의 마지막 보호자입니다. 탈퇴하면 가족과 등록된 아이 및 관련 데이터가 함께 탈퇴 처리되며 30일 동안 보관 후 삭제됩니다.
+                        </p>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={withdrawalLastGuardianAgreed}
+                            onChange={(e) => setWithdrawalLastGuardianAgreed(e.target.checked)}
+                            className="w-4 h-4 shrink-0 rounded text-red-500"
+                          />
+                          <span className="text-[10px] font-bold text-gray-600">가족의 모든 데이터가 함께 삭제되는 것에 동의합니다.</span>
+                        </label>
                       </div>
                     )}
 
@@ -996,14 +1029,18 @@ export default function ParentSettingsPage() {
                         type="checkbox"
                         checked={withdrawalAgreed}
                         onChange={(e) => setWithdrawalAgreed(e.target.checked)}
-                        className="w-4 h-4 rounded text-red-500"
+                        className="w-4 h-4 shrink-0 rounded text-red-500"
                       />
                       <span className="text-[10px] font-bold text-gray-600">안내 사항을 모두 확인했으며, 탈퇴에 동의합니다.</span>
                     </label>
 
                     <button
                       onClick={() => setWithdrawalStep(2)}
-                      disabled={!withdrawalAgreed || (isOwner && familyMembers.filter(m => (m.role === "parent" || m.role === "owner_parent") && !m.isMe).length > 0 && !withdrawalSuccessor)}
+                      disabled={
+                        !withdrawalAgreed || 
+                        (isOwner && otherActiveGuardians.length > 0 && !withdrawalSuccessor) || 
+                        (isOwner && otherActiveGuardians.length === 0 && !withdrawalLastGuardianAgreed)
+                      }
                       className="w-full py-2.5 rounded-xl text-white text-xs font-bold bg-red-500 disabled:opacity-50 mt-1"
                     >
                       다음 단계

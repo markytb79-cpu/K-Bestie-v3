@@ -11,7 +11,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { password, reason, successorUserId } = body;
+    const { password, reason, successorUserId, confirmedLastGuardian } = body;
 
     const isEmailUser = user.app_metadata?.provider === "email" || user.identities?.some((id) => id.provider === "email");
 
@@ -45,6 +45,7 @@ export async function POST(req: Request) {
       p_user_id: user.id,
       p_reason: reason || "사용자 자진 탈퇴",
       p_successor_user_id: successorUserId || null,
+      p_confirmed_last_guardian: !!confirmedLastGuardian,
     });
 
     if (error) {
@@ -56,6 +57,9 @@ export async function POST(req: Request) {
       const failReason = data?.[0]?.reason;
       if (failReason === "successor_required") {
         return NextResponse.json({ error: "successor_required" }, { status: 409 });
+      }
+      if (failReason === "last_guardian_confirmation_required") {
+        return NextResponse.json({ error: "last_guardian_confirmation_required" }, { status: 409 });
       }
       return NextResponse.json({ error: failReason }, { status: 400 });
     }

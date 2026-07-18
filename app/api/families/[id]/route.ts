@@ -26,6 +26,7 @@ export async function GET(
     .from("families")
     .select("id, created_by")
     .eq("id", id)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (!fam) return NextResponse.json({ error: "가족을 찾을 수 없습니다." }, { status: 404 });
@@ -37,6 +38,7 @@ export async function GET(
       .select("id")
       .eq("family_id", id)
       .eq("user_id", user.id)
+      .is("deleted_at", null)
       .maybeSingle();
     if (!memberRow) {
       return NextResponse.json({ error: "접근 권한이 없습니다." }, { status: 403 });
@@ -49,7 +51,7 @@ export async function GET(
     .from("families")
     .select(`
       id, name, created_by, created_at,
-      family_members(id, user_id, role, joined_at),
+      family_members(id, user_id, role, joined_at, deleted_at),
       child_profiles(id, name, grade, interests, created_at, tier, member_id, guardian_consent, guardian_consent_withdrawn_at)
     `)
     .eq("id", id)
@@ -66,10 +68,11 @@ export async function GET(
 
   let parentsNameMap: Record<string, string> = {};
   let parentsEmailMap: Record<string, string> = {};
+  let parentsStatusMap: Record<string, string> = {};
   if (parentUserIds.length > 0) {
     const { data: parentRows } = await svc
       .from("parents")
-      .select("id, name, email")
+      .select("id, name, email, account_status")
       .in("id", parentUserIds);
     parentsNameMap = Object.fromEntries(
       ((parentRows ?? []) as Array<{ id: string; name: string }>).map((p) => [p.id, p.name])
@@ -77,17 +80,31 @@ export async function GET(
     parentsEmailMap = Object.fromEntries(
       ((parentRows ?? []) as Array<{ id: string; email: string }>).map((p) => [p.id, p.email])
     );
+    parentsStatusMap = Object.fromEntries(
+      ((parentRows ?? []) as Array<{ id: string; account_status: string }>).map((p) => [p.id, p.account_status])
+    );
   }
 
-  const membersWithParentName = ((family.family_members ?? []) as Array<Record<string, unknown>>).map((m) => ({
-    ...m,
-    parent_name: (m.role === "owner_parent" || m.role === "parent")
-      ? (parentsNameMap[m.user_id as string] ?? null)
-      : null,
-    parent_email: (m.role === "owner_parent" || m.role === "parent")
-      ? (parentsEmailMap[m.user_id as string] ?? null)
-      : null,
-  }));
+  const validMembers = ((family.family_members ?? []) as Array<Record<string, unknown>>).filter((m) => {
+    if (m.deleted_at !== null) return false;
+    if (m.role === "owner_parent" || m.role === "parent") {
+      if (!["ACTIVE", "RESTORED"].includes(parentsStatusMap[m.user_id as string])) return false;
+    }
+    return true;
+  });
+
+  const membersWithParentName = validMembers.map((m) => {
+    const { deleted_at, ...rest } = m;
+    return {
+      ...rest,
+      parent_name: (m.role === "owner_parent" || m.role === "parent")
+        ? (parentsNameMap[m.user_id as string] ?? null)
+        : null,
+      parent_email: (m.role === "owner_parent" || m.role === "parent")
+        ? (parentsEmailMap[m.user_id as string] ?? null)
+        : null,
+    };
+  });
 
   return NextResponse.json({ family: { ...family, family_members: membersWithParentName } });
 }
@@ -102,6 +119,9 @@ export async function PATCH(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const activeCheck = await requireActiveAccount(user.id);
+  if (activeCheck) return activeCheck;
+
   let name: string;
   try {
     ({ name } = await req.json());
@@ -115,6 +135,7 @@ export async function PATCH(
     .update({ name: name.trim() })
     .eq("id", id)
     .eq("created_by", user.id)
+    .is("deleted_at", null)
     .select("id, name")
     .single();
 
