@@ -52,6 +52,127 @@ export default function ParentHomePage() {
   const [latestReport, setLatestReport] = useState<Report | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
 
+  // 가족 초대 팝업 관련 상태
+  const [pendingInvite, setPendingInvite] = useState<{ id: string; familyName: string; inviterName: string } | null>(null);
+  const [invitePopupLoading, setInvitePopupLoading] = useState(true);
+  const [inviteActionLoading, setInviteActionLoading] = useState(false);
+  const [inviteActionError, setInviteActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkPendingInvite = async () => {
+      try {
+        setInvitePopupLoading(true);
+        const res = await fetch("/api/families/pending-invite");
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.invite) {
+            setPendingInvite({
+              id: data.invite.id,
+              familyName: data.invite.familyName,
+              inviterName: data.invite.inviterName,
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to check pending invite:", err);
+      } finally {
+        setInvitePopupLoading(false);
+      }
+    };
+    checkPendingInvite();
+  }, []);
+
+  const handleAcceptPendingInvite = async () => {
+    if (!pendingInvite) return;
+    setInviteActionLoading(true);
+    setInviteActionError(null);
+    try {
+      const res = await fetch(`/api/families/pending-invite/${pendingInvite.id}/accept`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        setPendingInvite(null);
+        const { syncChildrenFromDB } = await import("@/lib/store");
+        await syncChildrenFromDB();
+      } else {
+        const data = await res.json();
+        setInviteActionError(data.error || "초대 수락에 실패했습니다.");
+      }
+    } catch {
+      setInviteActionError("네트워크 에러가 발생했습니다.");
+    } finally {
+      setInviteActionLoading(false);
+    }
+  };
+
+  const handleDeclinePendingInvite = async () => {
+    if (!pendingInvite) return;
+    setInviteActionLoading(true);
+    setInviteActionError(null);
+    try {
+      const res = await fetch(`/api/families/pending-invite/${pendingInvite.id}/decline`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        setPendingInvite(null);
+      } else {
+        const data = await res.json();
+        setInviteActionError(data.error || "초대 거절에 실패했습니다.");
+      }
+    } catch {
+      setInviteActionError("네트워크 에러가 발생했습니다.");
+    } finally {
+      setInviteActionLoading(false);
+    }
+  };
+
+  const renderInvitePopup = () => {
+    if (!pendingInvite) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+        <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col gap-4 text-center">
+          <div>
+            <p className="text-3xl mb-2">✉️</p>
+            <h3 className="text-base font-bold text-gray-800">다른 가족 구성원이 초대하였습니다</h3>
+            <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+              <span className="font-bold text-gray-800">{pendingInvite.familyName}</span> 가족의{" "}
+              <span className="font-bold text-gray-800">{pendingInvite.inviterName}</span>님이 보호자로 초대했어요.
+            </p>
+          </div>
+
+          {inviteActionError && (
+            <p className="text-xs font-semibold text-red-500">{inviteActionError}</p>
+          )}
+
+          <div className="flex flex-col gap-2 mt-2">
+            <button
+              onClick={handleAcceptPendingInvite}
+              disabled={inviteActionLoading}
+              className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 cursor-pointer active:scale-[0.98] transition-transform"
+              style={{ background: "#1a6b5a" }}
+            >
+              {inviteActionLoading ? "처리 중..." : "수락"}
+            </button>
+            <button
+              onClick={handleDeclinePendingInvite}
+              disabled={inviteActionLoading}
+              className="w-full py-3 rounded-xl font-bold text-sm bg-red-50 text-red-600 border border-red-100 disabled:opacity-50 cursor-pointer active:scale-[0.98] transition-transform"
+            >
+              {inviteActionLoading ? "처리 중..." : "거절"}
+            </button>
+            <button
+              onClick={() => setPendingInvite(null)}
+              disabled={inviteActionLoading}
+              className="w-full py-3 rounded-xl font-bold text-sm bg-white border border-gray-200 text-gray-500 disabled:opacity-50 cursor-pointer active:scale-[0.98] transition-transform"
+            >
+              나중에
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // 가족 관리 상태
   const [famName, setFamName] = useState("");
   const [creatingFam, setCreatingFam] = useState(false);
@@ -264,6 +385,7 @@ export default function ParentHomePage() {
           <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
             <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
           </div>
+          {renderInvitePopup()}
         </DemoFrame>
       );
     }
@@ -294,6 +416,7 @@ export default function ParentHomePage() {
               </button>
             </div>
           </div>
+          {renderInvitePopup()}
         </DemoFrame>
       );
     }
@@ -463,6 +586,7 @@ export default function ParentHomePage() {
             </div>
           )}
         </div>
+        {renderInvitePopup()}
       </DemoFrame>
     );
   }
@@ -491,6 +615,7 @@ export default function ParentHomePage() {
           </div>
           <RealParentNav active="홈" />
         </div>
+        {renderInvitePopup()}
       </DemoFrame>
     );
   }
@@ -593,6 +718,7 @@ export default function ParentHomePage() {
 
         <RealParentNav active="홈" />
       </div>
+      {renderInvitePopup()}
     </DemoFrame>
   );
 }

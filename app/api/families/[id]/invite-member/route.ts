@@ -59,28 +59,30 @@ export async function POST(
     .not("email", "ilike", "%@kbestie.local")
     .maybeSingle();
 
-  if (!targetParent) {
-    return NextResponse.json(
-      { error: "해당 이메일로 가입된 사용자가 없습니다. 상대방이 먼저 회원가입해야 합니다." },
-      { status: 404 }
-    );
-  }
-
   // 자기 자신 초대 방지
-  if (targetParent.id === user.id) {
-    return NextResponse.json({ error: "자기 자신을 초대할 수 없습니다." }, { status: 400 });
+  if (targetParent) {
+    if (targetParent.id === user.id) {
+      return NextResponse.json({ error: "자기 자신을 초대할 수 없습니다." }, { status: 400 });
+    }
+  } else {
+    const userEmail = user.email?.trim().toLowerCase();
+    if (userEmail && userEmail === normalizedEmail) {
+      return NextResponse.json({ error: "자기 자신을 초대할 수 없습니다." }, { status: 400 });
+    }
   }
 
   // ── 대상이 이미 가족 구성원인지 확인 ─────────────────────────────
-  const { data: alreadyMember } = await svc
-    .from("family_members")
-    .select("id")
-    .eq("family_id", familyId)
-    .eq("user_id", targetParent.id)
-    .maybeSingle();
+  if (targetParent) {
+    const { data: alreadyMember } = await svc
+      .from("family_members")
+      .select("id")
+      .eq("family_id", familyId)
+      .eq("user_id", targetParent.id)
+      .maybeSingle();
 
-  if (alreadyMember) {
-    return NextResponse.json({ error: "이미 가족 구성원입니다." }, { status: 409 });
+    if (alreadyMember) {
+      return NextResponse.json({ error: "이미 가족 구성원입니다." }, { status: 409 });
+    }
   }
 
   // ── 보호자 정원 확인 ───────────────────────────────────────────────
@@ -98,14 +100,30 @@ export async function POST(
   }
 
   // ── 중복 pending 초대 방지 ─────────────────────────────────────────
-  const { data: existingInvite } = await svc
-    .from("family_join_requests")
-    .select("id, status")
-    .eq("family_id", familyId)
-    .eq("target_user_id", targetParent.id)
-    .eq("direction", "owner_invite")
-    .eq("status", "pending")
-    .maybeSingle();
+  let existingInvite = null;
+  if (targetParent) {
+    const { data } = await svc
+      .from("family_join_requests")
+      .select("id, status")
+      .eq("family_id", familyId)
+      .eq("target_user_id", targetParent.id)
+      .eq("direction", "owner_invite")
+      .eq("status", "pending")
+      .maybeSingle();
+    existingInvite = data;
+  }
+
+  if (!existingInvite) {
+    const { data } = await svc
+      .from("family_join_requests")
+      .select("id, status")
+      .eq("family_id", familyId)
+      .eq("direction", "owner_invite")
+      .eq("status", "pending")
+      .ilike("requester_email", normalizedEmail)
+      .maybeSingle();
+    existingInvite = data;
+  }
 
   if (existingInvite) {
     return NextResponse.json(
@@ -121,7 +139,7 @@ export async function POST(
       family_id: familyId,
       requester_user_id: user.id,
       requester_email: normalizedEmail,   // 오너가 입력한 초대 대상 이메일
-      target_user_id: targetParent.id,
+      target_user_id: targetParent?.id ?? null,
       direction: "owner_invite",
       status: "pending",
     })
