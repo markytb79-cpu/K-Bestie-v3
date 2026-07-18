@@ -162,7 +162,7 @@ BEGIN
 
   -- (1-신규) play_session_id 기반 중복 소비 사전 체크 (p_play_session_id IS NOT NULL인 경우)
   IF p_play_session_id IS NOT NULL THEN
-    SELECT id, status, consumed_count
+    SELECT gold_key_consumptions.id, gold_key_consumptions.status, gold_key_consumptions.consumed_count
     INTO v_existing_id, v_existing_status, v_existing_consumed_count
     FROM gold_key_consumptions
     WHERE child_id = p_child_id
@@ -179,7 +179,7 @@ BEGIN
   END IF;
 
   -- (2) 기존 idempotency_key 기반 체크 — 락 획득 후 조회(락 이전 조회는 신뢰하지 않는다)
-  SELECT id, status, consumed_count
+  SELECT gold_key_consumptions.id, gold_key_consumptions.status, gold_key_consumptions.consumed_count
   INTO v_existing_id, v_existing_status, v_existing_consumed_count
   FROM gold_key_consumptions
   WHERE idempotency_key = p_idempotency_key
@@ -278,7 +278,7 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtext(v_child_id::text));
 
   -- 락 획득 후 최신 상태 재조회(위 사전 조회 값은 상태 판단에 재사용하지 않는다) + FOR UPDATE
-  SELECT id, status, consumed_count, refunded_count
+  SELECT gold_key_consumptions.id, gold_key_consumptions.status, gold_key_consumptions.consumed_count, gold_key_consumptions.refunded_count
   INTO v_header_id, v_status, v_consumed_count, v_already_refunded
   FROM gold_key_consumptions
   WHERE play_session_id = p_play_session_id
