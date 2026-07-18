@@ -56,6 +56,40 @@ export async function GET(req: NextRequest) {
     .eq("id", invite.requester_user_id)
     .maybeSingle();
 
+  // currentFamily 조회
+  let currentFamily = null;
+  const { data: member } = await svc
+    .from("family_members")
+    .select("family_id, families(id, name)")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (member && member.family_id) {
+    const familyId = member.family_id;
+    const familyName = (member.families as any)?.name ?? "";
+
+    // hasChildren
+    const { count: childCount } = await svc
+      .from("child_profiles")
+      .select("*", { count: "exact", head: true })
+      .eq("family_id", familyId);
+
+    // otherGuardianCount
+    const { count: guardianCount } = await svc
+      .from("family_members")
+      .select("*", { count: "exact", head: true })
+      .eq("family_id", familyId)
+      .neq("user_id", user.id);
+
+    currentFamily = {
+      id: familyId,
+      name: familyName,
+      hasChildren: (childCount ?? 0) > 0,
+      otherGuardianCount: guardianCount ?? 0,
+    };
+  }
+
   return NextResponse.json({
     invite: {
       id: invite.id,
@@ -63,5 +97,6 @@ export async function GET(req: NextRequest) {
       inviterName: inviter?.name ?? "알 수 없는 보호자",
       createdAt: invite.created_at,
     },
+    currentFamily,
   });
 }

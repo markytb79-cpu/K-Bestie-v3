@@ -38,17 +38,52 @@ export async function POST(req: NextRequest) {
 
   const svc = createServiceClient();
 
+  // 1. 현재 사용자의 기존 family_members 존재 여부 먼저 조회
+  const { data: existingMember, error: checkErr } = await svc
+    .from("family_members")
+    .select("family_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (checkErr) {
+    return NextResponse.json({ error: checkErr.message }, { status: 500 });
+  }
+  if (existingMember) {
+    return NextResponse.json({ error: "이미 가족에 소속되어 있습니다." }, { status: 409 });
+  }
+
+  // 2. 가족 생성
   const { data: family, error: famErr } = await svc
     .from("families")
     .insert({ name: name.trim(), created_by: user.id })
     .select("id, name, created_at")
     .single();
-  if (famErr) return NextResponse.json({ error: famErr.message }, { status: 500 });
 
+  if (famErr) {
+    if (famErr.code === "23505") {
+      return NextResponse.json({ error: "이미 가족에 소속되어 있습니다." }, { status: 409 });
+    }
+    return NextResponse.json({ error: famErr.message }, { status: 500 });
+  }
+
+  // 3. 멤버십 추가
   const { error: memErr } = await svc
     .from("family_members")
     .insert({ family_id: family.id, user_id: user.id, role: "owner_parent" });
-  if (memErr) return NextResponse.json({ error: memErr.message }, { status: 500 });
+
+  if (memErr) {
+    try {
+      await svc.from("families").delete().eq("id", family.id);
+    } catch (cleanupErr) {
+      console.error("Failed to cleanup orphaned family:", cleanupErr);
+    }
+
+    if (memErr.code === "23505") {
+      return NextResponse.json({ error: "이미 가족에 소속되어 있습니다." }, { status: 409 });
+    }
+    return NextResponse.json({ error: memErr.message }, { status: 500 });
+  }
 
   return NextResponse.json({ family }, { status: 201 });
 }

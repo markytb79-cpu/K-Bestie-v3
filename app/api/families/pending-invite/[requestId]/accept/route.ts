@@ -48,17 +48,30 @@ export async function POST(
   }
 
   // RPC 호출로 원자적 수락 처리 및 정원 재검증 진행
-  const { data: rpcResult, error: rpcError } = await svc.rpc("accept_family_invite", {
+  let rpcResponse = await svc.rpc("accept_family_invite", {
     p_request_id: requestId,
     p_user_id: user.id,
+    p_user_email: userEmail ?? null,
   });
+
+  // 데드락(40P01) 또는 직렬화 장애(40001) 발생 시 1회 자동 재시도
+  if (rpcResponse.error && (rpcResponse.error.code === "40P01" || rpcResponse.error.code === "40001")) {
+    console.warn(`[accept_invite] Deadlock or serialization error (${rpcResponse.error.code}) detected. Retrying accept_family_invite once...`);
+    rpcResponse = await svc.rpc("accept_family_invite", {
+      p_request_id: requestId,
+      p_user_id: user.id,
+      p_user_email: userEmail ?? null,
+    });
+  }
+
+  const { data: rpcResult, error: rpcError } = rpcResponse;
 
   if (rpcError) {
     return NextResponse.json({ error: rpcError.message }, { status: 500 });
   }
 
   const result = rpcResult?.[0] as
-    | { success: boolean; already_member: boolean; family_id: string; reason: string }
+    | { success: boolean; reason: string; previous_family_id: string | null }
     | undefined;
 
   if (!result) {
@@ -72,6 +85,8 @@ export async function POST(
       already_processed: 409,
       family_not_found: 404,
       capacity_full: 403,
+      conflict_existing_family: 409,
+      not_authorized: 403,
     };
     const messageMap: Record<string, string> = {
       not_found: "초대 요청을 찾을 수 없습니다.",
@@ -79,6 +94,8 @@ export async function POST(
       already_processed: "이미 처리된 초대입니다.",
       family_not_found: "가족 그룹이 존재하지 않습니다.",
       capacity_full: "가족 보호자 정원이 이미 가득 찼습니다.",
+      conflict_existing_family: "기존 가족에 자녀 또는 다른 보호자가 있어 자동으로 전환할 수 없습니다. 고객센터에 문의해주세요.",
+      not_authorized: "본인의 초대가 아닙니다.",
     };
     return NextResponse.json(
       { error: messageMap[result.reason] ?? "초대 수락에 실패했습니다." },
@@ -88,7 +105,8 @@ export async function POST(
 
   return NextResponse.json({
     ok: true,
-    familyId: result.family_id,
-    alreadyMember: result.already_member,
+    familyId: request.family_id,
+    alreadyMember: result.reason === "already_member",
+    previousFamilyId: result.previous_family_id ?? null,
   });
 }

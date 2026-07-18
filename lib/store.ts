@@ -160,24 +160,14 @@ export async function syncChildrenFromDB(): Promise<void> {
       }>;
     };
 
-    // 2. 아이가 있는 가족을 우선 선택한다. 모두 비어 있으면 joined_at 기준 첫 가족을
-    // 유지해 온보딩 반복으로 생긴 빈 중복 가족을 선택하지 않던 기존 동작을 보존한다.
-    let activeFamily = families[0];
-    let family: FamilyDetail | null = null;
-    for (const candidate of families) {
-      const famDetailRes = await fetch(`/api/families/${candidate.family_id}`);
-      if (!famDetailRes.ok) {
-        if (candidate === families[0]) return;
-        continue;
-      }
-      const detail = (await famDetailRes.json()) as { family: FamilyDetail };
-      if (!family) family = detail.family;
-      if ((detail.family.child_profiles ?? []).length > 0) {
-        activeFamily = candidate;
-        family = detail.family;
-        break;
-      }
+    if (families.length > 1) {
+      console.warn("예상치 못한 다중 가족 멤버십");
     }
+
+    const activeFamily = families[0];
+    const famDetailRes = await fetch(`/api/families/${activeFamily.family_id}`);
+    if (!famDetailRes.ok) return;
+    const { family } = (await famDetailRes.json()) as { family: FamilyDetail };
     if (!family) return;
 
     const familyId = activeFamily.family_id;

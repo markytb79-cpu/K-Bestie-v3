@@ -54,6 +54,9 @@ export default function ParentHomePage() {
 
   // 가족 초대 팝업 관련 상태
   const [pendingInvite, setPendingInvite] = useState<{ id: string; familyName: string; inviterName: string } | null>(null);
+  const [currentFamily, setCurrentFamily] = useState<{ id: string; name: string; hasChildren: boolean; otherGuardianCount: number } | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [agreeTransition, setAgreeTransition] = useState(false);
   const [invitePopupLoading, setInvitePopupLoading] = useState(true);
   const [inviteActionLoading, setInviteActionLoading] = useState(false);
   const [inviteActionError, setInviteActionError] = useState<string | null>(null);
@@ -71,6 +74,7 @@ export default function ParentHomePage() {
               familyName: data.invite.familyName,
               inviterName: data.invite.inviterName,
             });
+            setCurrentFamily(data.currentFamily ?? null);
           }
         }
       } catch (err) {
@@ -82,7 +86,7 @@ export default function ParentHomePage() {
     checkPendingInvite();
   }, []);
 
-  const handleAcceptPendingInvite = async () => {
+  const handleConfirmAcceptInvite = async () => {
     if (!pendingInvite) return;
     setInviteActionLoading(true);
     setInviteActionError(null);
@@ -91,7 +95,9 @@ export default function ParentHomePage() {
         method: "POST"
       });
       if (res.ok) {
+        setShowConfirmModal(false);
         setPendingInvite(null);
+        setAgreeTransition(false);
         const { syncChildrenFromDB } = await import("@/lib/store");
         await syncChildrenFromDB();
       } else {
@@ -128,48 +134,136 @@ export default function ParentHomePage() {
 
   const renderInvitePopup = () => {
     if (!pendingInvite) return null;
+
+    // 충돌 상태 계산 (자녀가 있거나 다른 보호자가 있는 기존 가족 소속인 경우)
+    const isConflict = currentFamily !== null && (currentFamily.hasChildren || currentFamily.otherGuardianCount > 0);
+
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-        <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col gap-4 text-center">
-          <div>
-            <p className="text-3xl mb-2">✉️</p>
-            <h3 className="text-base font-bold text-gray-800">다른 가족 구성원이 초대하였습니다</h3>
-            <p className="text-xs text-gray-500 mt-2 leading-relaxed">
-              <span className="font-bold text-gray-800">{pendingInvite.familyName}</span> 가족의{" "}
-              <span className="font-bold text-gray-800">{pendingInvite.inviterName}</span>님이 보호자로 초대했어요.
-            </p>
-          </div>
+      <>
+        {/* 1단계: 초대 팝업 */}
+        {!showConfirmModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col gap-4 text-center">
+              <div>
+                <p className="text-3xl mb-2">✉️</p>
+                <h3 className="text-base font-bold text-gray-800">다른 가족 구성원이 초대하였습니다</h3>
+                <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+                  <span className="font-bold text-gray-800">{pendingInvite.familyName}</span> 가족의{" "}
+                  <span className="font-bold text-gray-800">{pendingInvite.inviterName}</span>님이 보호자로 초대했어요.
+                </p>
+              </div>
 
-          {inviteActionError && (
-            <p className="text-xs font-semibold text-red-500">{inviteActionError}</p>
-          )}
+              {inviteActionError && (
+                <p className="text-xs font-semibold text-red-500">{inviteActionError}</p>
+              )}
 
-          <div className="flex flex-col gap-2 mt-2">
-            <button
-              onClick={handleAcceptPendingInvite}
-              disabled={inviteActionLoading}
-              className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 cursor-pointer active:scale-[0.98] transition-transform"
-              style={{ background: "#1a6b5a" }}
-            >
-              {inviteActionLoading ? "처리 중..." : "수락"}
-            </button>
-            <button
-              onClick={handleDeclinePendingInvite}
-              disabled={inviteActionLoading}
-              className="w-full py-3 rounded-xl font-bold text-sm bg-red-50 text-red-600 border border-red-100 disabled:opacity-50 cursor-pointer active:scale-[0.98] transition-transform"
-            >
-              {inviteActionLoading ? "처리 중..." : "거절"}
-            </button>
-            <button
-              onClick={() => setPendingInvite(null)}
-              disabled={inviteActionLoading}
-              className="w-full py-3 rounded-xl font-bold text-sm bg-white border border-gray-200 text-gray-500 disabled:opacity-50 cursor-pointer active:scale-[0.98] transition-transform"
-            >
-              나중에
-            </button>
+              {isConflict && (
+                <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-xl p-3 leading-relaxed text-left">
+                  기존 가족에 자녀 또는 다른 보호자가 있어 이 초대를 자동으로 수락할 수 없습니다. 고객센터에 문의해주세요.
+                </p>
+              )}
+
+              <div className="flex flex-col gap-2 mt-2">
+                {isConflict ? (
+                  <button
+                    disabled
+                    className="w-full py-3 rounded-xl font-bold text-white text-sm bg-gray-300 cursor-not-allowed"
+                  >
+                    수락 불가
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setInviteActionError(null);
+                      setAgreeTransition(false);
+                      setShowConfirmModal(true);
+                    }}
+                    disabled={inviteActionLoading}
+                    className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 cursor-pointer active:scale-[0.98] transition-transform"
+                    style={{ background: "#1a6b5a" }}
+                  >
+                    수락
+                  </button>
+                )}
+                <button
+                  onClick={handleDeclinePendingInvite}
+                  disabled={inviteActionLoading}
+                  className="w-full py-3 rounded-xl font-bold text-sm bg-red-50 text-red-600 border border-red-100 disabled:opacity-50 cursor-pointer active:scale-[0.98] transition-transform"
+                >
+                  {inviteActionLoading ? "처리 중..." : "거절"}
+                </button>
+                <button
+                  onClick={() => setPendingInvite(null)}
+                  disabled={inviteActionLoading}
+                  className="w-full py-3 rounded-xl font-bold text-sm bg-white border border-gray-200 text-gray-500 disabled:opacity-50 cursor-pointer active:scale-[0.98] transition-transform"
+                >
+                  나중에
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        )}
+
+        {/* 2단계: 파괴적 변경 확인 모달 */}
+        {showConfirmModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" style={{ zIndex: 60 }}>
+            <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col gap-4 text-center">
+              <div>
+                <p className="text-3xl mb-2">⚠️</p>
+                <h3 className="text-base font-bold text-gray-800">가족 전환 확인</h3>
+                
+                {currentFamily === null ? (
+                  <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+                    초대한 가족의 구성원으로 참여합니다.
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <p className="text-xs text-red-500 mt-2 leading-relaxed font-medium">
+                      가족 초대를 수락하면 현재 내가 만든 가족은 사라지고, 초대한 사람의 가족 구성원으로 전환됩니다. 기존 가족에 등록된 정보는 복구할 수 없습니다. 계속하시겠습니까?
+                    </p>
+                    <label className="flex items-start gap-2 text-left bg-gray-50 p-3 rounded-xl border border-gray-100 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={agreeTransition}
+                        onChange={(e) => setAgreeTransition(e.target.checked)}
+                        className="mt-1 cursor-pointer w-4 h-4 accent-[#1a6b5a]"
+                      />
+                      <span className="text-[11px] text-gray-600 leading-tight">
+                        기존 가족이 삭제되고 초대한 가족으로 전환되는 것에 동의합니다.
+                      </span>
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {inviteActionError && (
+                <p className="text-xs font-semibold text-red-500">{inviteActionError}</p>
+              )}
+
+              <div className="flex flex-col gap-2 mt-2">
+                <button
+                  onClick={handleConfirmAcceptInvite}
+                  disabled={inviteActionLoading || (currentFamily !== null && !agreeTransition)}
+                  className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 cursor-pointer active:scale-[0.98] transition-transform"
+                  style={{ background: "#1a6b5a" }}
+                >
+                  {inviteActionLoading ? "처리 중..." : (currentFamily === null ? "참여하기" : "초대 수락 및 가족 전환")}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowConfirmModal(false);
+                    setInviteActionError(null);
+                  }}
+                  disabled={inviteActionLoading}
+                  className="w-full py-3 rounded-xl font-bold text-sm bg-white border border-gray-200 text-gray-500 disabled:opacity-50 cursor-pointer active:scale-[0.98] transition-transform"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     );
   };
 
