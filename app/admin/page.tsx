@@ -471,13 +471,14 @@ function ChildRightPanel({
   );
 }
 
-type AdminPageId = "overview" | "revenue" | "cost" | "ai-config";
+type AdminPageId = "overview" | "revenue" | "cost" | "ai-config" | "account-restore";
 
 const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "overview", label: "전체 현황" },
   { id: "revenue", label: "매출·가입자 상세" },
   { id: "cost", label: "나갈 돈 · 비용 상세" },
   { id: "ai-config", label: "AI 설정" },
+  { id: "account-restore", label: "계정 복구 승인" },
 ];
 
 interface ProviderSwitchRow {
@@ -603,6 +604,115 @@ function ProviderSwitchTab() {
   );
 }
 
+function AccountRestoreTab() {
+  const [requests, setRequests] = useState<any[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetch("/api/admin/account-restore-requests")
+      .then(r => r.json())
+      .then(d => {
+        setRequests(Array.isArray(d) ? d : []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleAction = async (id: string, action: "approve" | "reject") => {
+    let reason = "";
+    if (action === "reject") {
+      const input = window.prompt("거절 사유를 입력하세요 (선택):");
+      if (input === null) return;
+      reason = input;
+    }
+
+    if (action === "approve" && !window.confirm("계정 복구를 승인하시겠습니까?")) return;
+
+    setActionLoading(id);
+    try {
+      const url = `/api/admin/account-restore-requests/${id}/${action}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(action === "reject" ? { reason } : {})
+      });
+      if (res.ok) {
+        alert("처리되었습니다.");
+        load();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        alert(d.error || "처리 실패");
+      }
+    } catch (err) {
+      alert("오류 발생");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  if (loading && !requests) return <EmptyState text="불러오는 중..." />;
+  if (!requests || requests.length === 0) return <EmptyState text="복구 신청 내역이 없습니다." />;
+
+  return (
+    <div>
+      <SectionTitle>계정 복구 신청 목록</SectionTitle>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {requests.map(req => {
+          const familyList = req.memberships.map((m: any) => `${m.families?.name || "알 수 없는 가족"} (${m.role})`).join(", ");
+          return (
+            <div key={req.id} style={{ background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)", padding: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#1e1e2d", marginBottom: 4 }}>
+                    {req.name} ({req.email})
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--hb-muted)" }}>
+                    탈퇴일: {formatDateTime(req.withdrawn_at)}<br />
+                    삭제예정일: {formatDateTime(req.purge_scheduled_at)}<br />
+                    신청일: {formatDateTime(req.restore_requested_at)}<br />
+                    가족: {familyList || "없음"}
+                  </div>
+                  {req.withdrawal_reason && (
+                    <div style={{ fontSize: 12, color: "#d97706", marginTop: 8, background: "#fef3c7", padding: "6px 10px", borderRadius: 6 }}>
+                      탈퇴 사유: {req.withdrawal_reason}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => handleAction(req.id, "reject")}
+                    disabled={actionLoading === req.id}
+                    style={{
+                      padding: "6px 12px", borderRadius: 8, border: "1px solid var(--hb-danger)",
+                      background: "white", color: "var(--hb-danger)", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                    }}
+                  >
+                    거절
+                  </button>
+                  <button
+                    onClick={() => handleAction(req.id, "approve")}
+                    disabled={actionLoading === req.id}
+                    style={{
+                      padding: "6px 12px", borderRadius: 8, border: "none",
+                      background: "var(--hb-primary)", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                    }}
+                  >
+                    승인
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AdminDashboard() {
   const [page, setPage] = useState<AdminPageId>("overview");
   const [period, setPeriod] = useState<Period>("month");
@@ -670,6 +780,8 @@ function AdminDashboard() {
       <div style={{ flex: 1, minWidth: 0 }}>
         {page === "ai-config" ? (
           <ProviderSwitchTab />
+        ) : page === "account-restore" ? (
+          <AccountRestoreTab />
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { requireActiveAccount } from "@/lib/auth/requireActiveAccount";
 
 export const runtime = "nodejs";
 
@@ -8,6 +9,9 @@ export async function GET() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const activeCheck = await requireActiveAccount(user.id);
+  if (activeCheck) return activeCheck;
 
   // joined_at 오름차순 — syncChildrenFromDB()가 families[0]을 "활성 가족"으로 선택하므로,
   // 온보딩 반복 버그 등으로 이후에 빈 중복 가족이 생겨도 항상 가장 먼저 가입한(진짜) 가족이

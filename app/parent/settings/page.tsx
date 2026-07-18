@@ -145,7 +145,17 @@ export default function ParentSettingsPage() {
   const [nicknameSuccess, setNicknameSuccess] = useState(false);
 
   // 아코디언 토글 상태 (기본은 닫힘)
-  const [activeMenu, setActiveMenu] = useState<"add_child" | "edit_child" | "family_members" | null>(null);
+  const [activeMenu, setActiveMenu] = useState<"add_child" | "edit_child" | "family_members" | "account_withdrawal" | null>(null);
+
+  // 탈퇴 모달 상태
+  const [withdrawalStep, setWithdrawalStep] = useState<1 | 2>(1);
+  const [withdrawalAgreed, setWithdrawalAgreed] = useState(false);
+  const [withdrawalSuccessor, setWithdrawalSuccessor] = useState<string>("");
+  const [withdrawalPassword, setWithdrawalPassword] = useState("");
+  const [withdrawalReason, setWithdrawalReason] = useState("");
+  const [withdrawalLoading, setWithdrawalLoading] = useState(false);
+  const [withdrawalError, setWithdrawalError] = useState<string | null>(null);
+  const [userProvider, setUserProvider] = useState<string>("email");
 
   // 로그인 이메일 및 구성원 정보 로드
   useEffect(() => {
@@ -153,6 +163,7 @@ export default function ParentSettingsPage() {
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => {
       if (data.user?.email) setUserEmail(data.user.email);
+      if (data.user?.app_metadata?.provider) setUserProvider(data.user.app_metadata.provider);
     }).catch(() => {});
 
     fetch("/api/parents/me")
@@ -481,6 +492,56 @@ export default function ParentSettingsPage() {
     router.push("/login");
   };
 
+  const handleWithdrawal = async () => {
+    setWithdrawalLoading(true);
+    setWithdrawalError(null);
+    try {
+      const body: any = { reason: withdrawalReason };
+      if (withdrawalSuccessor) body.successorUserId = withdrawalSuccessor;
+      if (userProvider === "email") body.password = withdrawalPassword;
+
+      const res = await fetch("/api/account/withdraw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      
+      if (!res.ok) {
+        if (res.status === 409) {
+          setWithdrawalError("관리자 권한을 승계할 보호자를 선택해야 합니다.");
+          setWithdrawalStep(1);
+        } else if (res.status === 401) {
+          if (userProvider !== "email" && data.error === "재로그인 후 다시 시도해주세요") {
+            setWithdrawalError("보안을 위해 다시 로그인 후 시도해주세요.");
+            setTimeout(async () => {
+              const supabase = createClient();
+              await supabase.auth.signOut().catch(() => {});
+              clearStore();
+              router.push("/login");
+            }, 2000);
+          } else {
+            setWithdrawalError("비밀번호가 일치하지 않습니다.");
+          }
+        } else {
+          setWithdrawalError(data.error || "탈퇴 처리에 실패했습니다.");
+        }
+        setWithdrawalLoading(false);
+        return;
+      }
+
+      alert("회원 탈퇴가 완료되었습니다.");
+      const supabase = createClient();
+      await supabase.auth.signOut().catch(() => {});
+      clearStore();
+      router.push("/login");
+    } catch (err) {
+      setWithdrawalError("오류가 발생했습니다.");
+      setWithdrawalLoading(false);
+    }
+  };
+
   const toggleInterest = (item: string, isEdit: boolean) => {
     if (isEdit) {
       setEditInterests((prev) =>
@@ -509,7 +570,7 @@ export default function ParentSettingsPage() {
     );
   }
 
-  const menuToggle = (menu: "add_child" | "edit_child" | "family_members") => {
+  const menuToggle = (menu: "add_child" | "edit_child" | "family_members" | "account_withdrawal") => {
     setActiveMenu((prev) => (prev === menu ? null : menu));
     setAddError(null);
   };
@@ -868,6 +929,124 @@ export default function ParentSettingsPage() {
                         </form>
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 4. 회원 탈퇴 메뉴 카드 */}
+          <div
+            onClick={() => menuToggle("account_withdrawal")}
+            className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 cursor-pointer mt-3"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0" style={{ background: "#f3f4f6" }}>
+                🚪
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-red-500">회원 탈퇴</p>
+                <p className="text-[11px]" style={{ color: "#6b7280" }}>계정과 모든 데이터를 삭제합니다</p>
+              </div>
+              <span className="text-sm" style={{ color: "#6b7280", transform: activeMenu === "account_withdrawal" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
+            </div>
+
+            {activeMenu === "account_withdrawal" && (
+              <div className="pt-3 border-t border-gray-100 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+                {withdrawalStep === 1 ? (
+                  <div className="flex flex-col gap-3">
+                    <div className="p-3 bg-red-50 rounded-xl border border-red-100">
+                      <p className="text-xs font-bold text-red-600 mb-1">⚠️ 탈퇴 전 확인해주세요</p>
+                      <p className="text-[10px] text-red-500 leading-relaxed">
+                        탈퇴하면 계정과 데이터가 30일 후 영구 삭제됩니다.<br />
+                        30일 이내에는 관리자 승인을 통해 복구할 수 있습니다.
+                      </p>
+                    </div>
+
+                    <textarea
+                      value={withdrawalReason}
+                      onChange={(e) => setWithdrawalReason(e.target.value)}
+                      placeholder="탈퇴 사유를 남겨주시면 서비스 개선에 큰 도움이 됩니다. (선택)"
+                      className="w-full p-3 text-xs border border-gray-200 rounded-xl bg-gray-50 outline-none resize-none"
+                      rows={3}
+                    />
+
+                    {isOwner && familyMembers.filter(m => (m.role === "parent" || m.role === "owner_parent") && !m.isMe).length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        <p className="text-[10px] font-bold text-gray-500">가족 관리자 권한 승계</p>
+                        <p className="text-[10px] text-gray-400">다른 보호자에게 관리자 권한을 넘겨야 탈퇴할 수 있습니다.</p>
+                        <select
+                          value={withdrawalSuccessor}
+                          onChange={(e) => setWithdrawalSuccessor(e.target.value)}
+                          className="p-2 text-xs border border-gray-200 rounded-xl bg-white outline-none"
+                        >
+                          <option value="">승계할 보호자 선택</option>
+                          {familyMembers
+                            .filter(m => (m.role === "parent" || m.role === "owner_parent") && !m.isMe)
+                            .map(m => (
+                              <option key={m.userId} value={m.userId}>{m.displayName} ({m.parentEmail || "이메일 알 수 없음"})</option>
+                            ))
+                          }
+                        </select>
+                      </div>
+                    )}
+
+                    <label className="flex items-center gap-2 cursor-pointer mt-2">
+                      <input
+                        type="checkbox"
+                        checked={withdrawalAgreed}
+                        onChange={(e) => setWithdrawalAgreed(e.target.checked)}
+                        className="w-4 h-4 rounded text-red-500"
+                      />
+                      <span className="text-[10px] font-bold text-gray-600">안내 사항을 모두 확인했으며, 탈퇴에 동의합니다.</span>
+                    </label>
+
+                    <button
+                      onClick={() => setWithdrawalStep(2)}
+                      disabled={!withdrawalAgreed || (isOwner && familyMembers.filter(m => (m.role === "parent" || m.role === "owner_parent") && !m.isMe).length > 0 && !withdrawalSuccessor)}
+                      className="w-full py-2.5 rounded-xl text-white text-xs font-bold bg-red-500 disabled:opacity-50 mt-1"
+                    >
+                      다음 단계
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <p className="text-xs font-bold text-gray-800">본인 확인</p>
+                    
+                    {userProvider === "email" ? (
+                      <input
+                        type="password"
+                        placeholder="계정 비밀번호를 입력해주세요"
+                        value={withdrawalPassword}
+                        onChange={(e) => setWithdrawalPassword(e.target.value)}
+                        className="p-3 text-xs border border-gray-200 rounded-xl bg-gray-50 outline-none"
+                      />
+                    ) : (
+                      <p className="text-[10px] text-gray-500 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                        {userProvider} 계정으로 로그인하셨습니다.<br />계속하려면 아래 버튼을 눌러주세요.
+                      </p>
+                    )}
+
+                    {withdrawalError && <p className="text-[10px] text-red-500">{withdrawalError}</p>}
+
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => {
+                          setWithdrawalStep(1);
+                          setWithdrawalError(null);
+                        }}
+                        className="flex-1 py-2.5 rounded-xl text-gray-600 text-xs font-bold bg-gray-100"
+                      >
+                        이전
+                      </button>
+                      <button
+                        onClick={handleWithdrawal}
+                        disabled={withdrawalLoading || (userProvider === "email" && !withdrawalPassword)}
+                        className="flex-1 py-2.5 rounded-xl text-white text-xs font-bold bg-red-500 disabled:opacity-50"
+                      >
+                        {withdrawalLoading ? "처리 중..." : "탈퇴하기"}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

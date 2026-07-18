@@ -65,6 +65,22 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // 탈퇴 계정 로그인 게이트 추가
+  if (!isAdminPath && pathname.startsWith("/parent") && pathname !== "/account/withdrawn") {
+    // anon 클라이언트로 부모 상태 조회 (parents_select_own RLS 적용)
+    const { data: parent } = await supabase
+      .from("parents")
+      .select("account_status")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (parent && (parent.account_status === "WITHDRAWN_PENDING" || parent.account_status === "RESTORE_REQUESTED")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/account/withdrawn";
+      return NextResponse.redirect(url);
+    }
+  }
+
   return supabaseResponse;
 }
 
