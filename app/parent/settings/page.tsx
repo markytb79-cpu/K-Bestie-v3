@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/hooks/useStore";
 import { createClient } from "@/lib/supabase/client";
@@ -76,6 +76,12 @@ export default function ParentSettingsPage() {
 
   // 수정 상태
   const [editChild, setEditChild] = useState<StoreChild | null>(null);
+  const editChildIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    editChildIdRef.current = editChild?.id ?? null;
+  }, [editChild]);
+
   const [editName, setEditName] = useState("");
   const [editGrade, setEditGrade] = useState("");
   const [editInterests, setEditInterests] = useState<string[]>([]);
@@ -91,6 +97,34 @@ export default function ParentSettingsPage() {
   const [withdrawTarget, setWithdrawTarget] = useState<{ childId: string; displayName: string } | null>(null);
   const [withdrawLoading, setWithdrawLoading] = useState(false);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
+
+  // 자녀 계정 관리 관련 상태
+  const [checkingAccount, setCheckingAccount] = useState(false);
+  const [accountUsername, setAccountUsername] = useState<string | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [showResetArea, setShowResetArea] = useState(false);
+  const [resetPasswordMode, setResetPasswordMode] = useState<"auto" | "direct">("auto");
+  const [newPasswordInput, setNewPasswordInput] = useState("");
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
+  const [resettingChildPassword, setResettingChildPassword] = useState(false);
+  const [childResetResult, setChildResetResult] = useState<{ username: string; password?: string } | null>(null);
+  const [copiedChildCreds, setCopiedChildCreds] = useState(false);
+
+  // 모달이 닫히면 계정 관리 상태 초기화
+  useEffect(() => {
+    if (!editChild) {
+      setAccountUsername(null);
+      setAccountError(null);
+      setShowResetArea(false);
+      setResetPasswordMode("auto");
+      setNewPasswordInput("");
+      setConfirmPasswordInput("");
+      setChildResetResult(null);
+      setCopiedChildCreds(false);
+      setCheckingAccount(false);
+      setResettingChildPassword(false);
+    }
+  }, [editChild]);
 
   // 가입 신청 목록 및 로딩 상태
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
@@ -856,6 +890,200 @@ export default function ParentSettingsPage() {
                       {p.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* 계정 관리 섹션 */}
+              <div className="border-t border-gray-150 pt-2.5 mt-1 flex flex-col gap-2">
+                <p className="text-[10px] font-bold text-gray-500 px-0.5 text-left">계정 관리</p>
+                
+                <div className="bg-gray-50 p-2.5 rounded-xl border border-gray-200/60 flex flex-col gap-2">
+                  <div className="flex gap-1.5">
+                    {/* 계정 확인 버튼 */}
+                    <button
+                      type="button"
+                      disabled={checkingAccount}
+                      onClick={async () => {
+                        if (!editChild) return;
+                        const requestedChildId = editChild.id;
+                        setCheckingAccount(true);
+                        setAccountError(null);
+                        try {
+                          const res = await fetch(`/api/child/${requestedChildId}/account`);
+                          const data = await res.json();
+                          if (editChildIdRef.current !== requestedChildId) return; // 모달이 바뀌었으면 무시
+                          if (!res.ok) {
+                            setAccountError(data.error || "계정 정보를 불러오지 못했습니다.");
+                            setAccountUsername(null);
+                          } else {
+                            setAccountUsername(data.username);
+                          }
+                        } catch {
+                          if (editChildIdRef.current === requestedChildId) setAccountError("네트워크 에러가 발생했습니다.");
+                        } finally {
+                          if (editChildIdRef.current === requestedChildId) setCheckingAccount(false);
+                        }
+                      }}
+                      className="flex-1 py-1.5 bg-[#f3f4f6] text-gray-700 text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
+                    >
+                      {checkingAccount ? "조회 중..." : "계정 확인"}
+                    </button>
+
+                    {/* 비밀번호 초기화 버튼 */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowResetArea(!showResetArea);
+                        setAccountError(null);
+                      }}
+                      className="flex-1 py-1.5 bg-[#f3f4f6] text-gray-700 text-[10px] font-bold rounded-lg cursor-pointer"
+                    >
+                      비밀번호 초기화
+                    </button>
+                  </div>
+
+                  {/* 계정 확인 성공 시 username 표시 */}
+                  {accountUsername && (
+                    <div className="bg-white border border-gray-150 rounded-lg p-2 text-center">
+                      <p className="text-[10px] font-medium text-gray-500">로그인 아이디</p>
+                      <p className="text-xs font-bold text-gray-800 select-all">{accountUsername}</p>
+                    </div>
+                  )}
+
+                  {/* 에러 메시지 표시 */}
+                  {accountError && (
+                    <p className="text-[10px] text-red-500 px-0.5 text-center leading-normal">
+                      {accountError}
+                    </p>
+                  )}
+
+                  {/* 비밀번호 초기화 서브/확장 영역 */}
+                  {showResetArea && (
+                    <div className="border-t border-gray-200/60 pt-2 mt-1 flex flex-col gap-2">
+                      {/* 초기화 성공 결과가 없을 때 입력 폼 노출 */}
+                      {!childResetResult ? (
+                        <>
+                          <div className="flex justify-center gap-4 py-1 text-[10px] font-bold text-gray-600">
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="reset_mode"
+                                checked={resetPasswordMode === "auto"}
+                                onChange={() => setResetPasswordMode("auto")}
+                                className="w-3.5 h-3.5 text-[#1a6b5a]"
+                              />
+                              <span>자동 생성</span>
+                            </label>
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="reset_mode"
+                                checked={resetPasswordMode === "direct"}
+                                onChange={() => setResetPasswordMode("direct")}
+                                className="w-3.5 h-3.5 text-[#1a6b5a]"
+                              />
+                              <span>직접 입력</span>
+                            </label>
+                          </div>
+
+                          {resetPasswordMode === "direct" && (
+                            <div className="flex flex-col gap-1.5 text-left">
+                              <input
+                                type="password"
+                                placeholder="새 비밀번호 (6자 이상)"
+                                value={newPasswordInput}
+                                onChange={(e) => setNewPasswordInput(e.target.value)}
+                                className="px-2.5 py-1.5 text-[10px] border border-gray-200 rounded-lg bg-white outline-none"
+                              />
+                              <input
+                                type="password"
+                                placeholder="새 비밀번호 확인"
+                                value={confirmPasswordInput}
+                                onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                                className="px-2.5 py-1.5 text-[10px] border border-gray-200 rounded-lg bg-white outline-none"
+                              />
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            disabled={
+                              resettingChildPassword ||
+                              (resetPasswordMode === "direct" &&
+                                (newPasswordInput.length < 6 || newPasswordInput !== confirmPasswordInput))
+                            }
+                            onClick={async () => {
+                              if (!editChild) return;
+                              const requestedChildId = editChild.id;
+                              setResettingChildPassword(true);
+                              setAccountError(null);
+                              try {
+                                const body =
+                                  resetPasswordMode === "direct"
+                                    ? { new_password: newPasswordInput }
+                                    : {};
+                                const res = await fetch(`/api/child/${requestedChildId}/account/reset-password`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify(body),
+                                });
+                                const data = await res.json();
+                                if (editChildIdRef.current !== requestedChildId) return; // 모달이 바뀌었으면 무시
+                                if (!res.ok) {
+                                  setAccountError(data.error || "비밀번호 초기화에 실패했습니다.");
+                                } else {
+                                  setChildResetResult(data);
+                                }
+                              } catch {
+                                if (editChildIdRef.current === requestedChildId) setAccountError("네트워크 에러가 발생했습니다.");
+                              } finally {
+                                if (editChildIdRef.current === requestedChildId) setResettingChildPassword(false);
+                              }
+                            }}
+                            className="w-full py-1.5 bg-[#1a6b5a] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
+                          >
+                            {resettingChildPassword
+                              ? "처리 중..."
+                              : resetPasswordMode === "auto"
+                              ? "발급받기"
+                              : "설정"}
+                          </button>
+                        </>
+                      ) : (
+                        /* 초기화 성공 결과 화면 */
+                        <div className="bg-white border border-[#e8845a]/30 rounded-xl p-3 flex flex-col gap-2">
+                          <p className="text-[10px] font-bold text-center text-[#e8845a]">
+                            비밀번호 초기화 완료
+                          </p>
+                          <div className="bg-gray-50 rounded-lg p-2 flex flex-col gap-1 text-[10px]">
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-500 font-medium">아이디</span>
+                              <span className="font-bold text-gray-800">{childResetResult.username}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-500 font-medium">비밀번호</span>
+                              <span className="font-bold text-[#e8845a]">{childResetResult.password}</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const textToCopy = `아이디: ${childResetResult.username} / 비밀번호: ${childResetResult.password}`;
+                              navigator.clipboard.writeText(textToCopy);
+                              setCopiedChildCreds(true);
+                              setTimeout(() => setCopiedChildCreds(false), 2000);
+                            }}
+                            className="w-full py-1.5 bg-[#e8845a] text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 active:scale-[0.98] transition-transform"
+                          >
+                            {copiedChildCreds ? "✓ 복사됨" : "📋 계정 정보 복사"}
+                          </button>
+                          <p className="text-[9px] text-gray-400 text-center leading-normal">
+                            이 비밀번호는 지금만 볼 수 있어요.<br />꼭 저장해두세요.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
