@@ -987,6 +987,9 @@ const SUBCATEGORY_LABEL: Record<string, string> = {
 
 function SafetyTab({ childId }: { childId: string }) {
   const [events, setEvents] = useState<SafetyEvent[] | null>(null);
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -1001,30 +1004,133 @@ function SafetyTab({ childId }: { childId: string }) {
   if (events === null) return <EmptyState text="불러오는 중..." />;
   if (events.length === 0) return <EmptyState text="안전 이벤트가 없어요." />;
 
+  const filteredEvents = events.filter((e) => {
+    if (selectedSubcategory && e.subcategory !== selectedSubcategory) {
+      return false;
+    }
+    const eventDate = e.created_at.substring(0, 10);
+    if (startDate && eventDate < startDate) {
+      return false;
+    }
+    if (endDate && eventDate > endDate) {
+      return false;
+    }
+    return true;
+  });
+
   return (
-    <div style={{ overflowX: "auto", background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th style={thStyle}>시각</th>
-            <th style={thStyle}>분류</th>
-            <th style={thStyle}>발화 원문</th>
-            <th style={thStyle}>확인여부</th>
-          </tr>
-        </thead>
-        <tbody>
-          {events.map((e) => (
-            <tr key={e.id}>
-              <td style={tdStyle}>{formatDateTime(e.created_at)}</td>
-              <td style={{ ...tdStyle, color: "var(--hb-danger)", fontWeight: 600 }}>
-                {SUBCATEGORY_LABEL[e.subcategory] ?? e.subcategory}
-              </td>
-              <td style={tdStyle}>{e.child_text}</td>
-              <td style={tdStyle}>{e.viewed_at ? "확인함" : "미확인"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* 필터 UI */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", marginBottom: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 13, color: "var(--hb-muted)", fontWeight: 500 }}>분류</span>
+          <select
+            value={selectedSubcategory}
+            onChange={(e) => setSelectedSubcategory(e.target.value)}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 8,
+              border: "1px solid var(--hb-border)",
+              fontSize: 13,
+              color: "#1e1e2d",
+              background: "var(--hb-card)",
+              outline: "none",
+            }}
+          >
+            <option value="">전체</option>
+            {Object.entries(SUBCATEGORY_LABEL).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 13, color: "var(--hb-muted)", fontWeight: 500 }}>기간</span>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 8,
+              border: "1px solid var(--hb-border)",
+              fontSize: 13,
+              color: "#1e1e2d",
+              background: "var(--hb-card)",
+              outline: "none",
+            }}
+          />
+          <span style={{ fontSize: 13, color: "var(--hb-muted)" }}>~</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 8,
+              border: "1px solid var(--hb-border)",
+              fontSize: 13,
+              color: "#1e1e2d",
+              background: "var(--hb-card)",
+              outline: "none",
+            }}
+          />
+        </div>
+
+        {(selectedSubcategory || startDate || endDate) && (
+          <button
+            onClick={() => {
+              setSelectedSubcategory("");
+              setStartDate("");
+              setEndDate("");
+            }}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--hb-primary)",
+              fontSize: 13,
+              cursor: "pointer",
+              padding: "4px 8px",
+              fontWeight: 500,
+            }}
+          >
+            필터 초기화
+          </button>
+        )}
+      </div>
+
+      {filteredEvents.length === 0 ? (
+        <div style={{ background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)", padding: "16px 0" }}>
+          <EmptyState text="조건에 맞는 이벤트가 없어요." />
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto", background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={thStyle}>시각</th>
+                <th style={thStyle}>분류</th>
+                <th style={thStyle}>발화 원문</th>
+                <th style={thStyle}>확인여부</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredEvents.map((e) => (
+                <tr key={e.id}>
+                  <td style={tdStyle}>{formatDateTime(e.created_at)}</td>
+                  <td style={{ ...tdStyle, color: "var(--hb-danger)", fontWeight: 600 }}>
+                    {SUBCATEGORY_LABEL[e.subcategory] ?? e.subcategory}
+                  </td>
+                  <td style={tdStyle}>{e.child_text}</td>
+                  <td style={tdStyle}>{e.viewed_at ? "확인함" : "미확인"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
