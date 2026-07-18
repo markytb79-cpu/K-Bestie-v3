@@ -98,6 +98,12 @@ export default function ParentSettingsPage() {
   const [withdrawLoading, setWithdrawLoading] = useState(false);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
+  // 아이 삭제 상태
+  const [deleteChildTarget, setDeleteChildTarget] = useState<{ childId: string; displayName: string } | null>(null);
+  const [deleteChildConfirmName, setDeleteChildConfirmName] = useState("");
+  const [deleteChildLoading, setDeleteChildLoading] = useState(false);
+  const [deleteChildError, setDeleteChildError] = useState<string | null>(null);
+
   // 자녀 계정 관리 관련 상태
   const [checkingAccount, setCheckingAccount] = useState(false);
   const [accountUsername, setAccountUsername] = useState<string | null>(null);
@@ -323,6 +329,41 @@ export default function ParentSettingsPage() {
       setWithdrawError("네트워크 에러가 발생했습니다.");
     } finally {
       setWithdrawLoading(false);
+    }
+  };
+
+  const handleDeleteChild = async () => {
+    if (!deleteChildTarget) return;
+    if (deleteChildConfirmName.trim() !== deleteChildTarget.displayName.trim()) {
+      setDeleteChildError("아이 이름이 정확히 일치하지 않습니다.");
+      return;
+    }
+
+    setDeleteChildLoading(true);
+    setDeleteChildError(null);
+
+    try {
+      const res = await fetch(`/api/child/${deleteChildTarget.childId}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDeleteChildError(data.error || "삭제에 실패했습니다.");
+        return;
+      }
+
+      setDeleteChildTarget(null);
+      setDeleteChildConfirmName("");
+      
+      await loadFamilyMembers();
+
+      const { syncChildrenFromDB } = await import("@/lib/store");
+      await syncChildrenFromDB();
+    } catch {
+      setDeleteChildError("네트워크 에러가 발생했습니다.");
+    } finally {
+      setDeleteChildLoading(false);
     }
   };
 
@@ -622,9 +663,23 @@ export default function ParentSettingsPage() {
                         <div key={m.memberId} className="bg-white border border-gray-100 rounded-xl p-2.5 flex items-center justify-between gap-2">
                           <span className="text-xs font-bold text-gray-800">🧒 {m.displayName} ({m.grade})</span>
                           {m.guardianConsentWithdrawnAt ? (
-                            <span className="text-[10px] bg-red-50 text-red-500 font-bold px-2.5 py-1 rounded-lg shrink-0">
-                              동의 철회됨
-                            </span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-[10px] bg-red-50 text-red-500 font-bold px-2.5 py-1 rounded-lg shrink-0">
+                                동의 철회됨
+                              </span>
+                              {isOwner && (
+                                <button
+                                  onClick={() => {
+                                    setDeleteChildError(null);
+                                    setDeleteChildTarget({ childId: m.childId, displayName: m.displayName });
+                                    setDeleteChildConfirmName("");
+                                  }}
+                                  className="text-[10px] bg-red-600 text-white font-bold px-2.5 py-1 rounded-lg cursor-pointer hover:bg-red-700 transition-colors"
+                                >
+                                  아이 삭제
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             <div className="flex items-center gap-1.5 shrink-0">
                               <button
@@ -654,6 +709,18 @@ export default function ParentSettingsPage() {
                               >
                                 동의 철회
                               </button>
+                              {isOwner && (
+                                <button
+                                  onClick={() => {
+                                    setDeleteChildError(null);
+                                    setDeleteChildTarget({ childId: m.childId, displayName: m.displayName });
+                                    setDeleteChildConfirmName("");
+                                  }}
+                                  className="text-[10px] bg-red-600 text-white font-bold px-2.5 py-1 rounded-lg cursor-pointer hover:bg-red-700 transition-colors"
+                                >
+                                  아이 삭제
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1173,6 +1240,50 @@ export default function ParentSettingsPage() {
                   onClick={() => setWithdrawTarget(null)}
                   disabled={withdrawLoading}
                   className="flex-1 py-2 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* 아이 삭제 확인 모달 — 파괴적 조작 */}
+        {deleteChildTarget && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6"
+            onClick={() => !deleteChildLoading && setDeleteChildTarget(null)}
+          >
+            <div className="bg-white rounded-2xl p-5 max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
+              <p className="text-sm font-bold mb-2 text-red-600">
+                {deleteChildTarget.displayName}을(를) 정말 삭제하시겠어요?
+              </p>
+              <p className="text-[11px] leading-relaxed text-gray-500 mb-3">
+                이 아이를 삭제하면 아이 계정과 가족 연결이 해제되고 관련 데이터가 삭제 절차에 들어갑니다. 삭제 후에는 복구할 수 없습니다.
+              </p>
+              <p className="text-[11px] font-bold text-gray-700 mb-1">
+                진행하려면 아이 이름 &quot;{deleteChildTarget.displayName}&quot;을(를) 그대로 입력해주세요.
+              </p>
+              <input
+                type="text"
+                value={deleteChildConfirmName}
+                onChange={(e) => setDeleteChildConfirmName(e.target.value)}
+                placeholder="아이 이름 입력"
+                className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-xl outline-none mb-3 bg-white text-gray-800"
+                disabled={deleteChildLoading}
+              />
+              {deleteChildError && <p className="text-xs text-red-500 mb-3">{deleteChildError}</p>}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleDeleteChild}
+                  disabled={deleteChildLoading || deleteChildConfirmName.trim() !== deleteChildTarget.displayName.trim()}
+                  className="flex-1 py-2 bg-red-600 text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50 hover:bg-red-700 transition-colors"
+                >
+                  {deleteChildLoading ? "삭제 중..." : "삭제"}
+                </button>
+                <button
+                  onClick={() => setDeleteChildTarget(null)}
+                  disabled={deleteChildLoading}
+                  className="flex-1 py-2 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50 hover:bg-gray-200 transition-colors"
                 >
                   취소
                 </button>

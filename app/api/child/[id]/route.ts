@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { LIVE_VOICE_NAMES } from "@/lib/plan/liveVoices";
 import { stampRetention, restoreRetention } from "@/lib/plan/retentionStamp";
 import type { Tier } from "@/lib/plan/retention";
@@ -142,20 +142,98 @@ export async function DELETE(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const authCheck = await requireChildAccess(supabase, user.id, id);
-  if (!authCheck.allowed) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
   try {
-    const { error } = await supabase
-      .from("child_profiles")
-      .delete()
-      .eq("id", id);
+    const serviceClient = createServiceClient();
 
-    if (error) throw error;
+    // 자녀가 삭제되기 전에 family_id를 미리 조회해 둡니다. (감사로그 기록용)
+    let familyId: string | null = null;
+    try {
+      const { data: childData } = await serviceClient
+        .from("child_profiles")
+        .select("family_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (childData) {
+        familyId = childData.family_id;
+      }
+    } catch (err) {
+      console.error("[child/route/DELETE] Pre-fetch family_id failed:", err);
+    }
+
+    const { data: rpcResult, error: rpcError } = await serviceClient.rpc("delete_child_profile", {
+      p_child_id: id,
+      p_user_id: user.id,
+    });
+
+    if (rpcError || !rpcResult || rpcResult.length === 0) {
+      console.error("[child/route/DELETE] RPC Error or empty result:", rpcError, rpcResult);
+      return NextResponse.json({ error: "삭제 실패" }, { status: 500 });
+    }
+
+    const { success, reason, deleted_user_id } = rpcResult[0] as {
+      success: boolean;
+      reason: string | null;
+      deleted_user_id: string | null;
+    };
+
+    if (!success) {
+      if (reason === "not_found") {
+        return NextResponse.json({ error: "아이 정보를 찾을 수 없습니다." }, { status: 404 });
+      }
+      if (reason === "not_authorized") {
+        return NextResponse.json({ error: "아이 삭제는 가족 오너만 가능합니다." }, { status: 403 });
+      }
+      return NextResponse.json({ error: "삭제 실패" }, { status: 500 });
+    }
+
+    // 자녀의 auth 계정이 있는 경우 최대 3회 재시도로 auth.users 계정 삭제
+    let authDeleteSuccess = false;
+    if (deleted_user_id) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const { error: authDelErr } = await serviceClient.auth.admin.deleteUser(deleted_user_id);
+          if (!authDelErr) {
+            authDeleteSuccess = true;
+            break;
+          }
+          console.error(`[child/route/DELETE] (Attempt ${attempt}/3) Failed to delete auth user ${deleted_user_id}:`, authDelErr);
+        } catch (authErr) {
+          console.error(`[child/route/DELETE] (Attempt ${attempt}/3) Exception while deleting auth user ${deleted_user_id}:`, authErr);
+        }
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+      }
+    } else {
+      authDeleteSuccess = true;
+    }
+
+    if (!authDeleteSuccess) {
+      // 3회 실패 시 감사 로그에 실패 사실 기록 (action: delete_child, reason: auth_delete_failed)
+      try {
+        const { error: auditError } = await serviceClient
+          .from("account_management_audit_log")
+          .insert({
+            actor_user_id: user.id,
+            actor_email: user.email || "",
+            action: "delete_child",
+            child_id: id,
+            family_id: familyId,
+            reason: "auth_delete_failed",
+          });
+        if (auditError) {
+          console.error("[child/route/DELETE] Failed to insert audit log for auth delete failure:", auditError);
+        }
+      } catch (e) {
+        console.error("[child/route/DELETE] Audit log insert exception:", e);
+      }
+
+      return NextResponse.json({ ok: true, authCleanupPending: true });
+    }
+
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (err) {
+    console.error("[child/route/DELETE] Exception:", err);
     return NextResponse.json({ error: "삭제 실패" }, { status: 500 });
   }
 }
