@@ -738,57 +738,70 @@ export default function ParentSettingsPage() {
                 ) : (
                   <div className="flex flex-col gap-2 p-3 bg-gray-50/50 rounded-xl border border-gray-150">
                     <p className="text-[10px] font-bold text-gray-500">자녀 프로필 수정</p>
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-3.5 md:gap-2">
                       {familyMembers.filter(m => m.role === "child").map((m) => (
-                        <div key={m.memberId} className="bg-white border border-gray-100 rounded-xl p-2.5 flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold text-gray-800">🧒 {m.displayName} ({m.grade})</span>
+                        <div key={m.memberId} className="block w-full bg-white border border-gray-200/80 md:border-gray-100 rounded-xl p-3.5 md:p-3 shadow-sm md:shadow-none md:flex md:flex-row md:items-center md:justify-between md:gap-3">
+                          {/* 1. 상단 아이 이름·학년 정보 영역 (모바일 w-full 독립 블록, keep-all) */}
+                          <div className="block w-full mb-3 md:mb-0 md:w-auto">
+                            <span className="block w-full text-xs font-bold text-gray-800 break-keep md:inline md:w-auto">
+                              🧒 {m.displayName} ({m.grade})
+                            </span>
+                          </div>
+
+                          {/* 2. 하단 액션 버튼 영역 (모바일 구분선 아래 독립 블록) */}
                           {m.guardianConsentWithdrawnAt ? (
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <span className="text-[10px] bg-red-50 text-red-500 font-bold px-2.5 py-1 rounded-lg shrink-0">
-                                동의 철회됨
-                              </span>
-                              {isOwner && (
-                                <button
-                                  onClick={() => {
-                                    setDeleteChildError(null);
-                                    setDeleteChildTarget({ childId: m.childId, displayName: m.displayName });
-                                    setDeleteChildConfirmName("");
-                                  }}
-                                  className="text-[10px] bg-red-600 text-white font-bold px-2.5 py-1 rounded-lg cursor-pointer hover:bg-red-700 transition-colors"
-                                >
-                                  아이 삭제
-                                </button>
-                              )}
+                            <div className="block w-full border-t border-gray-100/80 pt-3 md:border-t-0 md:pt-0 md:w-auto md:flex md:items-center md:gap-1.5">
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:flex md:items-center md:gap-1.5 w-full md:w-auto">
+                                <span className="block w-full text-[10px] bg-red-50 text-red-500 font-bold py-2 md:py-1 md:px-2.5 rounded-lg text-center md:w-auto">
+                                  동의 철회됨
+                                </span>
+                                {isOwner && (
+                                  <button
+                                    onClick={() => {
+                                      setDeleteChildError(null);
+                                      setDeleteChildTarget({ childId: m.childId, displayName: m.displayName });
+                                      setDeleteChildConfirmName("");
+                                    }}
+                                    className="block w-full text-[10px] bg-red-600 text-white font-bold py-2 md:py-1 md:px-2.5 rounded-lg cursor-pointer hover:bg-red-700 transition-colors text-center md:w-auto"
+                                  >
+                                    아이 삭제
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button
-                                onClick={() => {
-                                  setEditChild({
-                                    id: m.childId,
-                                    name: m.displayName,
-                                    grade: m.grade,
-                                    interests: m.interests
-                                  });
-                                  setEditName(m.displayName);
-                                  setEditGrade(m.grade);
-                                  setEditInterests(m.interests ?? []);
-                                  setEditTier(m.tier ?? 1);
-                                  setEditOriginalTier(m.tier ?? 1);
-                                }}
-                                className="text-[10px] bg-[#f3f4f6] text-gray-600 font-bold px-2.5 py-1 rounded-lg cursor-pointer"
-                              >
-                                수정하기
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setWithdrawError(null);
-                                  setWithdrawTarget({ childId: m.childId, displayName: m.displayName });
-                                }}
-                                className="text-[10px] bg-red-50 text-red-500 font-bold px-2.5 py-1 rounded-lg cursor-pointer"
-                              >
-                                동의 철회
-                              </button>
+                            <div className="block w-full border-t border-gray-100/80 pt-3 md:border-t-0 md:pt-0 md:w-auto md:flex md:items-center md:gap-1.5">
+                              {/* Block 2: 수정하기·동의 철회 (모바일 2열 grid 독립 블록) */}
+                              <div className="grid grid-cols-2 gap-2 w-full mb-2 md:mb-0 md:flex md:items-center md:gap-1.5 md:w-auto">
+                                <button
+                                  onClick={() => {
+                                    setEditChild({
+                                      id: m.childId,
+                                      name: m.displayName,
+                                      grade: m.grade,
+                                      interests: m.interests
+                                    });
+                                    setEditName(m.displayName);
+                                    setEditGrade(m.grade);
+                                    setEditInterests(m.interests ?? []);
+                                    setEditTier(m.tier ?? 1);
+                                    setEditOriginalTier(m.tier ?? 1);
+                                  }}
+                                  className="block w-full text-[10px] bg-[#f3f4f6] text-gray-600 font-bold py-2 md:py-1 md:px-2.5 rounded-lg cursor-pointer text-center md:w-auto whitespace-nowrap"
+                                >
+                                  수정하기
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setWithdrawError(null);
+                                    setWithdrawTarget({ childId: m.childId, displayName: m.displayName });
+                                  }}
+                                  className="block w-full text-[10px] bg-red-50 text-red-500 font-bold py-2 md:py-1 md:px-2.5 rounded-lg cursor-pointer text-center md:w-auto whitespace-nowrap"
+                                >
+                                  동의 철회
+                                </button>
+                              </div>
+                              {/* Block 3: 아이 삭제 (모바일 전체 너비 w-full 독립 블록) */}
                               {isOwner && (
                                 <button
                                   onClick={() => {
@@ -796,7 +809,7 @@ export default function ParentSettingsPage() {
                                     setDeleteChildTarget({ childId: m.childId, displayName: m.displayName });
                                     setDeleteChildConfirmName("");
                                   }}
-                                  className="text-[10px] bg-red-600 text-white font-bold px-2.5 py-1 rounded-lg cursor-pointer hover:bg-red-700 transition-colors"
+                                  className="block w-full text-[10px] bg-red-600 text-white font-bold py-2 md:py-1 md:px-2.5 rounded-lg cursor-pointer hover:bg-red-700 transition-colors text-center md:w-auto md:inline-block whitespace-nowrap"
                                 >
                                   아이 삭제
                                 </button>

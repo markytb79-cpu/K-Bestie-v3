@@ -6,10 +6,6 @@ import Image from "next/image";
 import { useStore } from "@/hooks/useStore";
 import { setStore } from "@/lib/store";
 
-const ORDINAL_LABELS = ["첫째", "둘째", "셋째", "넷째", "다섯째"];
-function ordinalLabel(idx: number): string {
-  return ORDINAL_LABELS[idx] ?? `${idx + 1}번째`;
-}
 
 // 모든 부모 화면(홈/리포트/케이와 대화/설정)에 고정으로 들어가는 상단 헤더.
 // 로고(좌측) + 현재 선택된 아이 이름(우측, 클릭 시 아이 선택 목록) + 알림 버튼.
@@ -61,7 +57,7 @@ export function ParentHeader() {
                   {/* 바깥 클릭 시 닫기 — 배경 딤 처리는 하지 않음(드롭다운이므로) */}
                   <div className="fixed inset-0 z-40" onClick={() => setShowPicker(false)} />
                   <div className="absolute right-0 top-full mt-2 z-50 w-52 bg-white rounded-xl shadow-lg border border-gray-100 p-1.5 flex flex-col gap-1">
-                    {children.map((c, idx) => {
+                    {children.map((c) => {
                       const isSelected = c.id === activeChild?.id;
                       return (
                         <button
@@ -71,7 +67,7 @@ export function ParentHeader() {
                             isSelected ? "bg-[#fdf1ec] text-[#e8845a]" : "text-gray-700 hover:bg-gray-50"
                           }`}
                         >
-                          <span>🧒 {ordinalLabel(idx)} · {c.name}</span>
+                          <span>🧒 {c.name}</span>
                           {isSelected && <span className="text-[9px] bg-[#e8845a] text-white px-1.5 py-0.5 rounded-full shrink-0">선택됨</span>}
                         </button>
                       );
