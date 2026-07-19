@@ -56,19 +56,18 @@ export function ParentHeader() {
                 <>
                   {/* 바깥 클릭 시 닫기 — 배경 딤 처리는 하지 않음(드롭다운이므로) */}
                   <div className="fixed inset-0 z-40" onClick={() => setShowPicker(false)} />
-                  <div className="absolute right-0 top-full mt-2 z-50 w-52 bg-white rounded-xl shadow-lg border border-gray-100 p-1.5 flex flex-col gap-1">
+                  <div className="absolute right-0 top-full mt-1.5 z-50 w-max min-w-[110px] bg-white rounded-xl shadow-lg border border-gray-100 p-1 flex flex-col gap-0.5">
                     {children.map((c) => {
                       const isSelected = c.id === activeChild?.id;
                       return (
                         <button
                           key={c.id}
                           onClick={() => handleSelect(c.id)}
-                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-bold cursor-pointer ${
+                          className={`w-full flex items-center px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer whitespace-nowrap ${
                             isSelected ? "bg-[#fdf1ec] text-[#e8845a]" : "text-gray-700 hover:bg-gray-50"
                           }`}
                         >
                           <span>🧒 {c.name}</span>
-                          {isSelected && <span className="text-[9px] bg-[#e8845a] text-white px-1.5 py-0.5 rounded-full shrink-0">선택됨</span>}
                         </button>
                       );
                     })}
