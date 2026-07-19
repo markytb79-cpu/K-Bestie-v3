@@ -736,7 +736,7 @@ export default function ParentSettingsPage() {
                 📝
               </div>
               <div className="flex-1">
-                <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>아이 프로필 정보 등록</p>
+                <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>아이 정보 관리</p>
                 <p className="text-[11px]" style={{ color: "#6b7280" }}>이름, 학년, 관심사, 요금제를 관리해요</p>
               </div>
               <span className="text-sm" style={{ color: "#6b7280", transform: activeMenu === "edit_child" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
@@ -847,7 +847,7 @@ export default function ParentSettingsPage() {
                 👨‍👩‍👧
               </div>
               <div className="flex-1">
-                <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>가족 구성원 관리</p>
+                <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>보호자 설정</p>
                 <p className="text-[11px]" style={{ color: "#6b7280" }}>내 이름, 알림, 보호자 구성원을 관리해요</p>
               </div>
               <span className="text-sm" style={{ color: "#6b7280", transform: activeMenu === "family_members" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>

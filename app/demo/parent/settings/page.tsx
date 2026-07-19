@@ -7,7 +7,7 @@ import { ParentNav } from "../../components/ParentNav";
 const SETTINGS_MENU = [
   { icon: "➕", title: "아이 추가", desc: "새로운 아이 계정을 추가해요" },
   { icon: "🔄", title: "아이 변경", desc: "다른 아이 프로필로 전환해요" },
-  { icon: "📝", title: "아이 프로필 정보 등록", desc: "이름, 학년, 생일 등을 관리해요" },
+  { icon: "📝", title: "아이 정보 관리", desc: "이름, 학년, 생일 등을 관리해요" },
 ];
 
 export default function DemoParentSettingsPage() {
