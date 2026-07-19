@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useStore } from "@/hooks/useStore";
 import { createClient } from "@/lib/supabase/client";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
+import { useDemoView } from "@/app/demo/components/DemoViewContext";
 import { RealParentNav } from "@/components/RealParentNav";
 import { ParentHeader } from "@/components/ParentHeader";
 import { SkeletonBox } from "@/components/Skeleton";
@@ -46,8 +47,19 @@ export default function ParentSettingsPage() {
   const router = useRouter();
   const store = useStore();
   const { reportAlert, weeklySummary } = store.notifSettings;
+  const { view: demoView } = useDemoView();
 
   const [mounted, setMounted] = useState(false);
+  const [windowWidth, setWindowWidth] = useState<number>(1200);
+
+  useEffect(() => {
+    const update = () => setWindowWidth(window.innerWidth);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  const isMobileCard = demoView === "mobile" || windowWidth < 768;
   const [questions, setQuestions] = useState<Question[]>([]);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
@@ -740,19 +752,19 @@ export default function ParentSettingsPage() {
                     <p className="text-[10px] font-bold text-gray-500">자녀 프로필 수정</p>
                     <div className="flex flex-col gap-3.5 md:gap-2">
                       {familyMembers.filter(m => m.role === "child").map((m) => (
-                        <div key={m.memberId} className="block w-full bg-white border border-gray-200/80 md:border-gray-100 rounded-xl p-3.5 md:p-3 shadow-sm md:shadow-none md:flex md:flex-row md:items-center md:justify-between md:gap-3">
+                        <div key={m.memberId} className={isMobileCard ? "block w-full bg-white border border-gray-200/80 rounded-xl p-3.5 shadow-sm" : "flex flex-row items-center justify-between gap-3 bg-white border border-gray-100 rounded-xl p-3 shadow-none min-w-0"}>
                           {/* 1. 상단 아이 이름·학년 정보 영역 (모바일 w-full 독립 블록, keep-all) */}
-                          <div className="block w-full mb-3 md:mb-0 md:w-auto">
-                            <span className="block w-full text-xs font-bold text-gray-800 break-keep md:inline md:w-auto">
+                          <div className={isMobileCard ? "block w-full mb-3" : "w-auto min-w-0 flex items-center gap-1.5"}>
+                            <span className={isMobileCard ? "block w-full text-xs font-bold text-gray-800 break-keep" : "inline text-xs font-bold text-gray-800 whitespace-nowrap"}>
                               🧒 {m.displayName} ({m.grade})
                             </span>
                           </div>
 
                           {/* 2. 하단 액션 버튼 영역 (모바일 구분선 아래 독립 블록) */}
                           {m.guardianConsentWithdrawnAt ? (
-                            <div className="block w-full border-t border-gray-100/80 pt-3 md:border-t-0 md:pt-0 md:w-auto md:flex md:items-center md:gap-1.5">
-                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:flex md:items-center md:gap-1.5 w-full md:w-auto">
-                                <span className="block w-full text-[10px] bg-red-50 text-red-500 font-bold py-2 md:py-1 md:px-2.5 rounded-lg text-center md:w-auto">
+                            <div className={isMobileCard ? "block w-full border-t border-gray-100/80 pt-3" : "w-auto flex items-center gap-1.5 shrink-0"}>
+                              <div className={isMobileCard ? "grid grid-cols-1 gap-2 sm:grid-cols-2 w-full" : "flex items-center gap-1.5 w-auto"}>
+                                <span className={isMobileCard ? "block w-full text-[10px] bg-red-50 text-red-500 font-bold py-2 rounded-lg text-center" : "text-[10px] bg-red-50 text-red-500 font-bold px-2.5 py-1 rounded-lg text-center"}>
                                   동의 철회됨
                                 </span>
                                 {isOwner && (
@@ -762,7 +774,7 @@ export default function ParentSettingsPage() {
                                       setDeleteChildTarget({ childId: m.childId, displayName: m.displayName });
                                       setDeleteChildConfirmName("");
                                     }}
-                                    className="block w-full text-[10px] bg-red-600 text-white font-bold py-2 md:py-1 md:px-2.5 rounded-lg cursor-pointer hover:bg-red-700 transition-colors text-center md:w-auto"
+                                    className={isMobileCard ? "block w-full text-[10px] bg-red-600 text-white font-bold py-2 rounded-lg cursor-pointer hover:bg-red-700 transition-colors text-center" : "text-[10px] bg-red-600 text-white font-bold px-2.5 py-1 rounded-lg cursor-pointer hover:bg-red-700 transition-colors text-center"}
                                   >
                                     아이 삭제
                                   </button>
@@ -770,9 +782,9 @@ export default function ParentSettingsPage() {
                               </div>
                             </div>
                           ) : (
-                            <div className="block w-full border-t border-gray-100/80 pt-3 md:border-t-0 md:pt-0 md:w-auto md:flex md:items-center md:gap-1.5">
+                            <div className={isMobileCard ? "block w-full border-t border-gray-100/80 pt-3" : "w-auto flex items-center gap-1.5 shrink-0"}>
                               {/* Block 2: 수정하기·동의 철회 (모바일 2열 grid 독립 블록) */}
-                              <div className="grid grid-cols-2 gap-2 w-full mb-2 md:mb-0 md:flex md:items-center md:gap-1.5 md:w-auto">
+                              <div className={isMobileCard ? "grid grid-cols-2 gap-2 w-full mb-2" : "flex items-center gap-1.5 w-auto"}>
                                 <button
                                   onClick={() => {
                                     setEditChild({
@@ -787,7 +799,7 @@ export default function ParentSettingsPage() {
                                     setEditTier(m.tier ?? 1);
                                     setEditOriginalTier(m.tier ?? 1);
                                   }}
-                                  className="block w-full text-[10px] bg-[#f3f4f6] text-gray-600 font-bold py-2 md:py-1 md:px-2.5 rounded-lg cursor-pointer text-center md:w-auto whitespace-nowrap"
+                                  className={isMobileCard ? "block w-full text-[10px] bg-[#f3f4f6] text-gray-600 font-bold py-2 rounded-lg cursor-pointer text-center whitespace-nowrap" : "text-[10px] bg-[#f3f4f6] text-gray-600 font-bold px-2.5 py-1 rounded-lg cursor-pointer text-center whitespace-nowrap"}
                                 >
                                   수정하기
                                 </button>
@@ -796,7 +808,7 @@ export default function ParentSettingsPage() {
                                     setWithdrawError(null);
                                     setWithdrawTarget({ childId: m.childId, displayName: m.displayName });
                                   }}
-                                  className="block w-full text-[10px] bg-red-50 text-red-500 font-bold py-2 md:py-1 md:px-2.5 rounded-lg cursor-pointer text-center md:w-auto whitespace-nowrap"
+                                  className={isMobileCard ? "block w-full text-[10px] bg-red-50 text-red-500 font-bold py-2 rounded-lg cursor-pointer text-center whitespace-nowrap" : "text-[10px] bg-red-50 text-red-500 font-bold px-2.5 py-1 rounded-lg cursor-pointer text-center whitespace-nowrap"}
                                 >
                                   동의 철회
                                 </button>
@@ -809,7 +821,7 @@ export default function ParentSettingsPage() {
                                     setDeleteChildTarget({ childId: m.childId, displayName: m.displayName });
                                     setDeleteChildConfirmName("");
                                   }}
-                                  className="block w-full text-[10px] bg-red-600 text-white font-bold py-2 md:py-1 md:px-2.5 rounded-lg cursor-pointer hover:bg-red-700 transition-colors text-center md:w-auto md:inline-block whitespace-nowrap"
+                                  className={isMobileCard ? "block w-full text-[10px] bg-red-600 text-white font-bold py-2 rounded-lg cursor-pointer hover:bg-red-700 transition-colors text-center whitespace-nowrap" : "text-[10px] bg-red-600 text-white font-bold px-2.5 py-1 rounded-lg cursor-pointer hover:bg-red-700 transition-colors text-center whitespace-nowrap"}
                                 >
                                   아이 삭제
                                 </button>
